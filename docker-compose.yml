@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/data:/app/data
+      - ./backend/valuation.db:/app/valuation.db
     env_file:
       - ./backend/.env
     restart: always

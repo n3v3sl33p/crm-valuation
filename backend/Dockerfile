@@ -1,15 +1,12 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 WORKDIR /app
 
-COPY requirements.txt .
 COPY pyproject.toml .
 
 RUN pip install uv
 RUN uv sync
 
 COPY . .
-
-RUN mkdir -p /app/data
 
 EXPOSE 8000
 
