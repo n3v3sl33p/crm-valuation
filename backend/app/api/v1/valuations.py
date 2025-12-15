@@ -110,6 +110,16 @@ async def update_valuation_request(
         current_comments.append(new_comment)
         valuation_request.comments = current_comments
 
+    # Helper to validate appraiser
+    async def validate_appraiser(appraiser_id: int) -> User:
+        result = await db.execute(select(User).where(User.id == appraiser_id))
+        appraiser = result.scalars().first()
+        if not appraiser:
+            raise HTTPException(status_code=404, detail=f"User with ID {appraiser_id} not found")
+        if appraiser.role != UserRole.APPRAISER:
+            raise HTTPException(status_code=400, detail=f"User with ID {appraiser_id} is not an APPRAISER")
+        return appraiser
+
     # Allowed if Employee OR (Client AND Status is CREATED)
     has_property_updates = any([
         request_in.address is not None,
@@ -143,12 +153,21 @@ async def update_valuation_request(
              if valuation_request.status != RequestStatus.CREATED and valuation_request.status != RequestStatus.RETURNED_TO_EMPLOYEE:
                   raise HTTPException(status_code=400, detail="Can only approve created or returned requests")
              valuation_request.status = RequestStatus.APPROVED_BY_EMPLOYEE
-             add_comment(request_in.comment_text or "Request approved by employee.")
+             
+             # 2. Assign Appraiser (if both actions in one request)
+             if request_in.appraiser_id:
+                 await validate_appraiser(request_in.appraiser_id)
+                 valuation_request.appraiser_id = request_in.appraiser_id
+                 valuation_request.status = RequestStatus.APPRAISER_ASSIGNED
+                 add_comment(request_in.comment_text or f"Request approved and appraiser assigned (ID: {request_in.appraiser_id}).")
+             else:
+                 add_comment(request_in.comment_text or "Request approved by employee.")
 
-        # 2. Assign Appraiser
-        if request_in.appraiser_id:
+        # 2. Assign Appraiser (only if not already handled above)
+        elif request_in.appraiser_id:
              if valuation_request.status != RequestStatus.APPROVED_BY_EMPLOYEE:
                   raise HTTPException(status_code=400, detail="Approve request before assigning appraiser")
+             await validate_appraiser(request_in.appraiser_id)
              valuation_request.appraiser_id = request_in.appraiser_id
              valuation_request.status = RequestStatus.APPRAISER_ASSIGNED
              add_comment(request_in.comment_text or f"Appraiser assigned (ID: {request_in.appraiser_id}).")
