@@ -21,6 +21,8 @@ import {
     FieldGroup,
     FieldLabel,
 } from "@/components/ui/field";
+import { authService } from "@/lib/api/authService";
+import type { RegisterRequest } from "@/lib/api/types";
 
 const registerSchema = z
     .object({
@@ -37,13 +39,17 @@ const registerSchema = z
             .max(50, "Отчество должно содержать максимум 50 символов")
             .optional()
             .or(z.literal("")),
+        phone: z
+            .string()
+            .min(10, "Номер телефона должен содержать минимум 10 цифр")
+            .max(15, "Номер телефона должен содержать максимум 15 цифр"),
         email: z
             .string()
             .min(1, "Email обязателен для заполнения")
             .email("Введите корректный email адрес"),
         password: z
             .string()
-            .min(8, "Пароль должен содержать минимум 8 символов")
+            .min(6, "Пароль должен содержать минимум 8 символов")
             .max(50, "Пароль должен содержать максимум 50 символов"),
         confirmPassword: z.string().min(1, "Подтвердите пароль"),
     })
@@ -68,9 +74,26 @@ export function RegisterForm() {
         },
     });
 
-    function onSubmit(data: z.infer<typeof registerSchema>) {
-        console.log(data);
-        // TODO: Implement registration logic
+    async function onSubmit(data: z.infer<typeof registerSchema>) {
+        try {
+            const { confirmPassword, ...rest } = data;
+            const registerData: RegisterRequest = {
+                email: rest.email,
+                phone: rest.phone,
+                first_name: rest.firstName,
+                last_name: rest.lastName,
+                middle_name: rest.middleName || "",
+                role: "CLIENT",
+                password: rest.password,
+            };
+
+            const response = await authService.register(registerData);
+            console.log("Registration successful:", response);
+            // TODO: Navigate to login or auto-login
+        } catch (error) {
+            console.error("Registration failed:", error);
+            // TODO: Show error toast
+        }
     }
 
     return (
@@ -150,6 +173,30 @@ export function RegisterForm() {
                                             {...field}
                                             id="middleName"
                                             placeholder="Иванович"
+                                            aria-invalid={fieldState.invalid}
+                                        />
+                                        {fieldState.invalid && (
+                                            <FieldError
+                                                errors={[fieldState.error]}
+                                            />
+                                        )}
+                                    </Field>
+                                )}
+                            />
+
+                            <Controller
+                                name="phone"
+                                control={form.control}
+                                render={({ field, fieldState }) => (
+                                    <Field data-invalid={fieldState.invalid}>
+                                        <FieldLabel htmlFor="phone">
+                                            Телефон
+                                        </FieldLabel>
+                                        <Input
+                                            {...field}
+                                            id="phone"
+                                            type="tel"
+                                            placeholder="+7 (999) 123-45-67"
                                             aria-invalid={fieldState.invalid}
                                         />
                                         {fieldState.invalid && (
