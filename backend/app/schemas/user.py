@@ -14,12 +14,12 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, max_length=72, description="Password must be at least 6 characters long and contain at least one uppercase letter.")
 
-    @field_validator('password')
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if not re.search(r"[A-Z]", v):
-            raise ValueError('Password must contain at least one uppercase letter')
-        return v
+    # @field_validator('password')
+    # @classmethod
+    # def validate_password(cls, v: str) -> str:
+    #     if not re.search(r"[A-Z]", v):
+    #         raise ValueError('Password must contain at least one uppercase letter')
+    #     return v
 
 class UserUpdate(BaseModel):
     phone: Optional[str] = None
