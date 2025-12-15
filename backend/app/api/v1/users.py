@@ -68,6 +68,24 @@ async def read_appraisers(
     appraisers = result.scalars().all()
     return appraisers
 
+@router.get("/{user_id}", response_model=UserResponse)
+async def read_user_by_id(
+    user_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Get a user by ID. 
+    Authenticated users can read basic info of other users (for chat/assignment UI).
+    """
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    return user
+
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,

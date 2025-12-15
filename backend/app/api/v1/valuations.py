@@ -110,6 +110,32 @@ async def update_valuation_request(
         current_comments.append(new_comment)
         valuation_request.comments = current_comments
 
+    # Allowed if Employee OR (Client AND Status is CREATED)
+    has_property_updates = any([
+        request_in.address is not None,
+        request_in.property_type is not None,
+        request_in.room_count is not None,
+        request_in.room_details is not None
+    ])
+    
+    if has_property_updates:
+        can_edit = False
+        if current_user.role == UserRole.EMPLOYEE:
+            can_edit = True
+        elif current_user.role == UserRole.CLIENT and valuation_request.client_id == current_user.id:
+            if valuation_request.status == RequestStatus.CREATED:
+                can_edit = True
+        
+        if can_edit:
+            if request_in.address is not None: valuation_request.address = request_in.address
+            if request_in.property_type is not None: valuation_request.property_type = request_in.property_type
+            if request_in.room_count is not None: valuation_request.room_count = request_in.room_count
+            if request_in.room_details is not None: valuation_request.room_details = request_in.room_details
+        else:
+            # If tried to update but no permission
+             raise HTTPException(status_code=403, detail="Cannot edit property details at this stage or with your role")
+
+
     # --- Employee Logic ---
     if current_user.role == UserRole.EMPLOYEE:
         # 1. Approve Request
@@ -186,7 +212,8 @@ async def update_valuation_request(
              add_comment(request_in.comment_text)
 
     else:
-        raise HTTPException(status_code=403, detail="Permission denied")
+        # If user has no role (unlikely) or none of the above matches, but we handled edits earlier
+        pass
 
     # Save changes
     db.add(valuation_request)

@@ -23,6 +23,12 @@ class ValuationRequestUpdate(BaseModel):
     appraiser_id: Optional[int] = None
     status: Optional[RequestStatus] = None
     comment_text: Optional[str] = None # New comment to add
+    
+    # Editable property fields
+    address: Optional[str] = None
+    property_type: Optional[str] = None
+    room_count: Optional[int] = None
+    room_details: Optional[str] = None
 
 class ValuationRequestResponse(ValuationRequestBase):
     id: int
