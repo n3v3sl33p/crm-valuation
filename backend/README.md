@@ -4,7 +4,7 @@ Backend-сервис для агентства оценки недвижимос
 
 ## Технологический стек
 
-*   **Язык**: Python 3.12+
+*   **Язык**: Python 3.13+
 *   **Фреймворк**: FastAPI
 *   **База данных**: SQLite (с использованием `aiosqlite` для асинхронности)
 *   **ORM**: SQLAlchemy (Async)
@@ -33,8 +33,8 @@ Backend-сервис для агентства оценки недвижимос
 1.  **Создайте файл `.env` в папке `backend`:**
     ```env
     SECRET_KEY=ваш_надежный_ключ_минимум_32_символа
-    ALGORITHM=...
-    DATABASE_URL=sqlite+aiosqlite:///./data/valuation.db
+    ALGORITHM=HS256
+    DATABASE_URL=sqlite+aiosqlite:///./valuation.db
     ```
 
 2.  **Сборка образа:**
@@ -44,63 +44,53 @@ Backend-сервис для агентства оценки недвижимос
     ```
 
 3.  **Запуск контейнера:**
-    Запустите контейнер, пробросив файл `.env` (или передав переменные окружения) и смонтировав папку `data`:
+    Запустите контейнер, пробросив файл `.env` и смонтировав файл базы данных:
     ```bash
     # Linux / MacOS
     docker run -d -p 8000:8000 \
       --env-file .env \
-      -v $(pwd)/data:/app/data \
+      -v $(pwd)/valuation.db:/app/valuation.db \
       valuation-backend
     
     # Windows (PowerShell)
     docker run -d -p 8000:8000 `
       --env-file .env `
-      -v ${PWD}/data:/app/data `
+      -v ${PWD}/valuation.db:/app/valuation.db `
       valuation-backend
+    ```
+    
+    **Или используйте Docker Compose** (рекомендуется):
+    ```bash
+    docker-compose up -d --build
     ```
 
 4.  **Доступ:**
     Сервис будет доступен по адресу: `http://localhost:8000`.
     Автоматическая документация (Swagger UI): `http://localhost:8000/docs`.
+    
+    **Примечание:** База данных `valuation.db` сохраняется между перезапусками контейнера благодаря volume. Файл базы данных находится в папке `backend/` на хосте.
 
 ### Вариант 2: Локальный запуск (Без Docker)
 
-1.  Установите зависимости:
+1.  Установите зависимости с помощью `uv`:
     ```bash
     cd backend
-    pip install -r requirements.txt
+    pip install uv
+    uv sync
     ```
 
-2.  Создайте файл `.env` (пример в `app/core/config.py` или просто используйте дефолтные значения для тестов, но лучше задать `SECRET_KEY`).
+2.  Создайте файл `.env` в папке `backend`:
+    ```env
+    SECRET_KEY=ваш_надежный_ключ_минимум_32_символа
+    ALGORITHM=HS256
+    DATABASE_URL=sqlite+aiosqlite:///./valuation.db
+    ```
 
 3.  Запустите сервер:
     ```bash
-    uvicorn app.main:app --reload
+    uv run uvicorn app.main:app --reload
     ```
 
-### Инициализация тестовых данных
-
-Чтобы быстро создать пользователей (Клиент, Сотрудник, Оценщик) с паролем `Bebraa`:
-
-1.  Если используете Docker:
-    ```bash
-    # Узнайте ID контейнера
-    docker ps
-    # Запустите скрипт внутри контейнера
-    docker exec -it <container_id> python seed.py
-    ```
-
-2.  Если локально:
-    ```bash
-    python seed.py
-    ```
-
-Пользователи для входа:
-*   `user1@mail.com` (CLIENT)
-*   `user2@mail.com` (EMPLOYEE)
-*   `user3@mail.com` (APPRAISER)
-
----
 
 ## Сценарий работы (Workflow)
 

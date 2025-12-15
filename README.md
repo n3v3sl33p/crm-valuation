@@ -13,7 +13,7 @@
 ```env
 SECRET_KEY=ваш_надежный_случайный_ключ
 ALGORITHM=HS256
-DATABASE_URL=sqlite+aiosqlite:///./data/valuation.db
+DATABASE_URL=sqlite+aiosqlite:///./valuation.db
 ```
 
 ### 2. Запуск
@@ -31,19 +31,7 @@ docker-compose up -d --build
 
 Frontend автоматически настроен проксировать запросы на `/api/` к бэкенду.
 
-### 4. Создание тестовых пользователей
-
-Чтобы наполнить базу данных, выполните команду внутри контейнера бэкенда:
-
-```bash
-docker-compose exec backend python seed.py
-```
-
-Пользователи:
-*   `user1@mail.com` (CLIENT)
-*   `user2@mail.com` (EMPLOYEE)
-*   `user3@mail.com` (APPRAISER)
-Пароль для всех: `Bebraa`
+**Примечание:** База данных `backend/valuation.db` автоматически сохраняется между перезапусками Docker благодаря volume в `docker-compose.yml`.
 
 ---
 
