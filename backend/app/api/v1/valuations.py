@@ -80,9 +80,7 @@ async def read_valuation_request(
     if current_user.role == UserRole.APPRAISER and valuation_request.appraiser_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this request")
     if current_user.role == UserRole.EMPLOYEE and valuation_request.status == RequestStatus.DRAFT:
-         # Optionally prevent Employee from viewing specific DRAFT if they guess ID, though usually harmless.
-         # Let's restrict for consistency.
-         raise HTTPException(status_code=404, detail="Request not found") # Hide draft
+         raise HTTPException(status_code=404, detail="Request not found") 
         
     return valuation_request
 
@@ -197,6 +195,16 @@ async def update_valuation_request(
              valuation_request.status = RequestStatus.APPRAISER_ASSIGNED
              add_comment(request_in.comment_text or f"Appraiser assigned (ID: {request_in.appraiser_id}). Date: {request_in.assessment_date}")
 
+        # Return Report to Appraiser
+        elif request_in.status == RequestStatus.RETURNED_TO_APPRAISER:
+             if valuation_request.status not in [RequestStatus.REPORT_SUBMITTED, RequestStatus.RETURNED_TO_EMPLOYEE]:
+                  raise HTTPException(status_code=400, detail="Can only return reports that are submitted or returned by client")
+             if not request_in.comment_text:
+                  raise HTTPException(status_code=400, detail="Reason for return is required")
+             
+             valuation_request.status = RequestStatus.RETURNED_TO_APPRAISER
+             add_comment(request_in.comment_text)
+
         # 3. Approve Report
         elif request_in.status == RequestStatus.REPORT_APPROVED_BY_EMPLOYEE:
              if valuation_request.status != RequestStatus.REPORT_SUBMITTED:
@@ -226,7 +234,7 @@ async def update_valuation_request(
              
         # 4. Submit Report
         elif request_in.status == RequestStatus.REPORT_SUBMITTED:
-             if valuation_request.status != RequestStatus.APPRAISER_ASSIGNED and valuation_request.status != RequestStatus.RETURNED_TO_EMPLOYEE:
+             if valuation_request.status not in [RequestStatus.APPRAISER_ASSIGNED, RequestStatus.RETURNED_TO_EMPLOYEE, RequestStatus.RETURNED_TO_APPRAISER]:
                   raise HTTPException(status_code=400, detail="Cannot submit report at this stage")
              
              if not request_in.comment_text:

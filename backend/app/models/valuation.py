@@ -11,6 +11,7 @@ class RequestStatus(str, enum.Enum):
     APPROVED_BY_EMPLOYEE = "APPROVED_BY_EMPLOYEE" # Approved by Employee
     APPRAISER_ASSIGNED = "APPRAISER_ASSIGNED" # Appraiser Assigned by Employee
     REPORT_SUBMITTED = "REPORT_SUBMITTED" # Report done by Appraiser
+    RETURNED_TO_APPRAISER = "RETURNED_TO_APPRAISER" # Employee rejects report back to Appraiser
     REPORT_APPROVED_BY_EMPLOYEE = "REPORT_APPROVED_BY_EMPLOYEE" # Report approved by Employee
     COMPLETED = "COMPLETED" # Accepted by Client
     RETURNED_TO_EMPLOYEE = "RETURNED_TO_EMPLOYEE" # Rejected by Client (Report rejected)
