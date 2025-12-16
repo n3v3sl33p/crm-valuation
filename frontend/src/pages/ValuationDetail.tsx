@@ -315,7 +315,7 @@ export function ValuationDetail() {
         };
         return statusMap[status] || status;
     };
-
+    // БАСТА/ГУФ 2010
     if (loading) {
         return (
             <div>
