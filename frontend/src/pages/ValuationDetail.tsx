@@ -271,7 +271,7 @@ export function ValuationDetail() {
     };
 
     const handleDeleteValuation = async () => {
-        if (!id || !valuation || valuation.status !== "CREATED") {
+        if (!id || !valuation || (valuation.status !== "CREATED" && valuation.status !== "DRAFT")) {
             return;
         }
 
@@ -505,30 +505,33 @@ export function ValuationDetail() {
                                     )}
                                 />
 
-                                <Controller
-                                    name="comment_text"
-                                    control={form.control}
-                                    render={({ field, fieldState }) => (
-                                        <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="comment_text">
-                                                Комментарий (необязательно)
-                                            </FieldLabel>
-                                            <textarea
-                                                {...field}
-                                                id="comment_text"
-                                                placeholder="Добавьте комментарий к заявке"
-                                                aria-invalid={fieldState.invalid}
-                                                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                                rows={3}
-                                            />
-                                            {fieldState.invalid && (
-                                                <FieldError
-                                                    errors={[fieldState.error]}
+                                {/* Поле комментария скрыто для черновиков (DRAFT) */}
+                                {valuation.status !== "DRAFT" && (
+                                    <Controller
+                                        name="comment_text"
+                                        control={form.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="comment_text">
+                                                    Комментарий (необязательно)
+                                                </FieldLabel>
+                                                <textarea
+                                                    {...field}
+                                                    id="comment_text"
+                                                    placeholder="Добавьте комментарий к заявке"
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    rows={3}
                                                 />
-                                            )}
-                                        </Field>
-                                    )}
-                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                )}
                             </FieldGroup>
                             <div className="flex gap-2">
                                 <Button

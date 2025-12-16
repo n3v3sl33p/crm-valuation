@@ -10,7 +10,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { FileText, Phone, LogOut, User } from "lucide-react";
+import { FileText, LogOut, User } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { authService } from "@/lib/api/authService";
 import { useNavigate } from "react-router-dom";
@@ -20,11 +20,6 @@ const menuItems = [
         title: "Мои заявки",
         url: "/dashboard/applications",
         icon: FileText,
-    },
-    {
-        title: "Мои вызовы",
-        url: "/dashboard/calls",
-        icon: Phone,
     },
 ];
 
