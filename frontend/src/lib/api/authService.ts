@@ -18,7 +18,7 @@ export const authService = {
         };
 
         const response = await apiClient.post<LoginResponse>(
-            "/api/v1/auth/login",
+            "/auth/login",
             new URLSearchParams(data as any),
             {
                 headers: {
@@ -31,7 +31,7 @@ export const authService = {
 
     register: async (data: RegisterRequest): Promise<RegisterResponse> => {
         const response = await apiClient.post<RegisterResponse>(
-            "/api/v1/users/register",
+            "/users/register",
             data,
         );
         return response.data;

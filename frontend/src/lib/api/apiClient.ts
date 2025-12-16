@@ -1,7 +1,13 @@
 import axios from "axios";
 
+// Используем относительный путь для работы через nginx proxy в Docker
+// или абсолютный URL для разработки
+// В Docker: установите VITE_API_BASE_URL=/api/v1
+// Локально: http://localhost:8000/api/v1 (по умолчанию)
+const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+
 const apiClient = axios.create({
-    baseURL: "http://localhost:8000",
+    baseURL: baseURL,
     timeout: 10000,
     headers: {
         "Content-Type": "application/json",
