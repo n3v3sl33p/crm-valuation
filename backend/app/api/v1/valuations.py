@@ -234,7 +234,7 @@ async def update_valuation_request(
              
         # 4. Submit Report
         elif request_in.status == RequestStatus.REPORT_SUBMITTED:
-             if valuation_request.status not in [RequestStatus.APPRAISER_ASSIGNED, RequestStatus.RETURNED_TO_EMPLOYEE, RequestStatus.RETURNED_TO_APPRAISER]:
+             if valuation_request.status not in [RequestStatus.APPRAISER_ASSIGNED, RequestStatus.RETURNED_TO_APPRAISER]:
                   raise HTTPException(status_code=400, detail="Cannot submit report at this stage")
              
              if not request_in.comment_text:
