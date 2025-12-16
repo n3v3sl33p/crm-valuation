@@ -18,6 +18,7 @@ async def create_valuation_request(
 ) -> Any:
     """
     Create a new valuation request. Only Clients can create.
+    Initial status is DRAFT.
     """
     if current_user.role != UserRole.CLIENT:
         raise HTTPException(status_code=403, detail="Only clients can create requests")
@@ -25,7 +26,7 @@ async def create_valuation_request(
     valuation_request = ValuationRequest(
         **request_in.model_dump(),
         client_id=current_user.id,
-        status=RequestStatus.CREATED,
+        status=RequestStatus.DRAFT,
         comments=[] # Initialize empty list
     )
     db.add(valuation_request)
@@ -42,7 +43,7 @@ async def read_valuation_requests(
 ) -> Any:
     """
     Retrieve valuation requests. Visibility depends on role.
-    Employee sees all.
+    Employee sees all EXCEPT Drafts.
     """
     query = select(ValuationRequest)
     
@@ -50,7 +51,9 @@ async def read_valuation_requests(
         query = query.where(ValuationRequest.client_id == current_user.id)
     elif current_user.role == UserRole.APPRAISER:
         query = query.where(ValuationRequest.appraiser_id == current_user.id)
-    # Employee sees all
+    elif current_user.role == UserRole.EMPLOYEE:
+        # Employee should not see drafts
+        query = query.where(ValuationRequest.status != RequestStatus.DRAFT)
     
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
@@ -76,6 +79,10 @@ async def read_valuation_request(
         raise HTTPException(status_code=403, detail="Not authorized to view this request")
     if current_user.role == UserRole.APPRAISER and valuation_request.appraiser_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to view this request")
+    if current_user.role == UserRole.EMPLOYEE and valuation_request.status == RequestStatus.DRAFT:
+         # Optionally prevent Employee from viewing specific DRAFT if they guess ID, though usually harmless.
+         # Let's restrict for consistency.
+         raise HTTPException(status_code=404, detail="Request not found") # Hide draft
         
     return valuation_request
 
@@ -105,7 +112,6 @@ async def update_valuation_request(
             "created_at": datetime.utcnow().isoformat(),
             "user_name": f"{current_user.first_name} {current_user.last_name}"
         }
-        # Copy list, append, reassign to trigger SQLAlchemy detection if needed (for JSON types sometimes mutable)
         current_comments = list(valuation_request.comments) if valuation_request.comments else []
         current_comments.append(new_comment)
         valuation_request.comments = current_comments
@@ -121,7 +127,6 @@ async def update_valuation_request(
         return appraiser
 
     # --- Property Details Updates ---
-    # Allowed if Employee OR (Client AND Status is CREATED)
     has_property_updates = any([
         request_in.address is not None,
         request_in.property_type is not None,
@@ -134,7 +139,8 @@ async def update_valuation_request(
         if current_user.role == UserRole.EMPLOYEE:
             can_edit = True
         elif current_user.role == UserRole.CLIENT and valuation_request.client_id == current_user.id:
-            if valuation_request.status == RequestStatus.CREATED:
+            # Client can edit only in DRAFT or RETURNED_TO_CLIENT
+            if valuation_request.status in [RequestStatus.DRAFT, RequestStatus.RETURNED_TO_CLIENT]:
                 can_edit = True
         
         if can_edit:
@@ -143,16 +149,25 @@ async def update_valuation_request(
             if request_in.room_count is not None: valuation_request.room_count = request_in.room_count
             if request_in.room_details is not None: valuation_request.room_details = request_in.room_details
         else:
-            # If tried to update but no permission
              raise HTTPException(status_code=403, detail="Cannot edit property details at this stage or with your role")
 
 
     # --- Employee Logic ---
     if current_user.role == UserRole.EMPLOYEE:
+        # Return to Client
+        if request_in.status == RequestStatus.RETURNED_TO_CLIENT:
+            if valuation_request.status != RequestStatus.CREATED:
+                 raise HTTPException(status_code=400, detail="Can only return CREATED requests to client")
+            if not request_in.comment_text:
+                 raise HTTPException(status_code=400, detail="Reason for return is required")
+            
+            valuation_request.status = RequestStatus.RETURNED_TO_CLIENT
+            add_comment(request_in.comment_text)
+
         # 1. Approve Request
-        if request_in.status == RequestStatus.APPROVED_BY_EMPLOYEE:
+        elif request_in.status == RequestStatus.APPROVED_BY_EMPLOYEE:
              if valuation_request.status != RequestStatus.CREATED and valuation_request.status != RequestStatus.RETURNED_TO_EMPLOYEE:
-                  raise HTTPException(status_code=400, detail="Can only approve created or returned requests")
+                  raise HTTPException(status_code=400, detail="Can only approve CREATED or RETURNED_TO_EMPLOYEE requests")
              valuation_request.status = RequestStatus.APPROVED_BY_EMPLOYEE
              
              # 2. Assign Appraiser (if both actions in one request)
@@ -183,14 +198,14 @@ async def update_valuation_request(
              add_comment(request_in.comment_text or f"Appraiser assigned (ID: {request_in.appraiser_id}). Date: {request_in.assessment_date}")
 
         # 3. Approve Report
-        if request_in.status == RequestStatus.REPORT_APPROVED_BY_EMPLOYEE:
+        elif request_in.status == RequestStatus.REPORT_APPROVED_BY_EMPLOYEE:
              if valuation_request.status != RequestStatus.REPORT_SUBMITTED:
                   raise HTTPException(status_code=400, detail="Report must be submitted before approval")
              valuation_request.status = RequestStatus.REPORT_APPROVED_BY_EMPLOYEE
              add_comment(request_in.comment_text or "Report approved by employee.")
 
         # Allow Employee to just comment
-        if request_in.comment_text and not request_in.status and not request_in.appraiser_id:
+        elif request_in.comment_text and not request_in.status and not request_in.appraiser_id:
              add_comment(request_in.comment_text)
 
 
@@ -199,8 +214,8 @@ async def update_valuation_request(
         if valuation_request.appraiser_id != current_user.id:
              raise HTTPException(status_code=403, detail="Not your assignment")
         
-        # Self-cancellation logic
-        if request_in.status == RequestStatus.APPROVED_BY_EMPLOYEE: # Reverting status
+        # Self-cancellation
+        if request_in.status == RequestStatus.APPROVED_BY_EMPLOYEE:
              if valuation_request.status != RequestStatus.APPRAISER_ASSIGNED:
                   raise HTTPException(status_code=400, detail="Can only cancel assignment if in assigned status")
              
@@ -209,7 +224,6 @@ async def update_valuation_request(
              valuation_request.assessment_date = None
              valuation_request.status = RequestStatus.APPROVED_BY_EMPLOYEE
              
-        
         # 4. Submit Report
         elif request_in.status == RequestStatus.REPORT_SUBMITTED:
              if valuation_request.status != RequestStatus.APPRAISER_ASSIGNED and valuation_request.status != RequestStatus.RETURNED_TO_EMPLOYEE:
@@ -219,9 +233,9 @@ async def update_valuation_request(
                   raise HTTPException(status_code=400, detail="Report content (comment) is required")
                   
              valuation_request.status = RequestStatus.REPORT_SUBMITTED
-             add_comment(request_in.comment_text) # This comment IS the report or contains it
+             add_comment(request_in.comment_text) 
 
-        # Allow Appraiser to comment/ask questions
+        # Allow Appraiser to comment
         elif request_in.comment_text and not request_in.status:
              add_comment(request_in.comment_text)
 
@@ -230,8 +244,16 @@ async def update_valuation_request(
         if valuation_request.client_id != current_user.id:
              raise HTTPException(status_code=403, detail="Not your request")
 
+        # Submit / Resubmit
+        if request_in.status == RequestStatus.CREATED:
+            if valuation_request.status not in [RequestStatus.DRAFT, RequestStatus.RETURNED_TO_CLIENT]:
+                raise HTTPException(status_code=400, detail="Can only submit DRAFT or RETURNED_TO_CLIENT requests")
+            
+            valuation_request.status = RequestStatus.CREATED
+            add_comment(request_in.comment_text or "Request submitted to employee.")
+
         # 5. Review Report
-        if request_in.status == RequestStatus.COMPLETED:
+        elif request_in.status == RequestStatus.COMPLETED:
              if valuation_request.status != RequestStatus.REPORT_APPROVED_BY_EMPLOYEE:
                   raise HTTPException(status_code=400, detail="Report not ready for final approval")
              valuation_request.status = RequestStatus.COMPLETED
@@ -247,11 +269,10 @@ async def update_valuation_request(
              add_comment(request_in.comment_text)
 
         # Allow Client to comment
-        if request_in.comment_text and not request_in.status:
+        elif request_in.comment_text and not request_in.status:
              add_comment(request_in.comment_text)
 
     else:
-        # If user has no role (unlikely) or none of the above matches, but we handled edits earlier
         pass
 
     # Save changes
@@ -269,7 +290,7 @@ async def delete_valuation_request(
     """
     Delete a valuation request.
     Only EMPLOYEE can delete any request.
-    CLIENT can delete their own request if it is in CREATED state.
+    CLIENT can delete their own request if it is in DRAFT or CREATED state.
     """
     result = await db.execute(select(ValuationRequest).where(ValuationRequest.id == id))
     valuation_request = result.scalars().first()
@@ -282,8 +303,8 @@ async def delete_valuation_request(
     elif current_user.role == UserRole.CLIENT:
         if valuation_request.client_id != current_user.id:
              raise HTTPException(status_code=403, detail="Not authorized to delete this request")
-        if valuation_request.status != RequestStatus.CREATED:
-             raise HTTPException(status_code=400, detail="Can only delete requests in CREATED status")
+        if valuation_request.status not in [RequestStatus.DRAFT, RequestStatus.CREATED]:
+             raise HTTPException(status_code=400, detail="Can only delete requests in DRAFT or CREATED status")
     else:
         raise HTTPException(status_code=403, detail="Permission denied")
         

@@ -5,13 +5,15 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 class RequestStatus(str, enum.Enum):
-    CREATED = "CREATED" # Created by Client
+    DRAFT = "DRAFT" # Client creates draft
+    CREATED = "CREATED" # Client submits to Employee
+    RETURNED_TO_CLIENT = "RETURNED_TO_CLIENT" # Employee returns to Client for corrections
     APPROVED_BY_EMPLOYEE = "APPROVED_BY_EMPLOYEE" # Approved by Employee
     APPRAISER_ASSIGNED = "APPRAISER_ASSIGNED" # Appraiser Assigned by Employee
     REPORT_SUBMITTED = "REPORT_SUBMITTED" # Report done by Appraiser
     REPORT_APPROVED_BY_EMPLOYEE = "REPORT_APPROVED_BY_EMPLOYEE" # Report approved by Employee
     COMPLETED = "COMPLETED" # Accepted by Client
-    RETURNED_TO_EMPLOYEE = "RETURNED_TO_EMPLOYEE" # Rejected by Client
+    RETURNED_TO_EMPLOYEE = "RETURNED_TO_EMPLOYEE" # Rejected by Client (Report rejected)
 
 class ValuationRequest(Base):
     __tablename__ = "valuation_requests"
@@ -24,7 +26,7 @@ class ValuationRequest(Base):
     room_count = Column(Integer, nullable=False)
     room_details = Column(Text, nullable=False) # JSON or description
     
-    status = Column(Enum(RequestStatus), default=RequestStatus.CREATED, nullable=False)
+    status = Column(Enum(RequestStatus), default=RequestStatus.DRAFT, nullable=False)
     
     # Workflow Data
     # Stores list of {role: str, text: str, created_at: str, action: str}
