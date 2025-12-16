@@ -120,6 +120,7 @@ async def update_valuation_request(
             raise HTTPException(status_code=400, detail=f"User with ID {appraiser_id} is not an APPRAISER")
         return appraiser
 
+    # --- Property Details Updates ---
     # Allowed if Employee OR (Client AND Status is CREATED)
     has_property_updates = any([
         request_in.address is not None,
@@ -157,9 +158,13 @@ async def update_valuation_request(
              # 2. Assign Appraiser (if both actions in one request)
              if request_in.appraiser_id:
                  await validate_appraiser(request_in.appraiser_id)
+                 if not request_in.assessment_date:
+                     raise HTTPException(status_code=400, detail="Assessment date is required when assigning appraiser")
+                 
                  valuation_request.appraiser_id = request_in.appraiser_id
+                 valuation_request.assessment_date = request_in.assessment_date
                  valuation_request.status = RequestStatus.APPRAISER_ASSIGNED
-                 add_comment(request_in.comment_text or f"Request approved and appraiser assigned (ID: {request_in.appraiser_id}).")
+                 add_comment(request_in.comment_text or f"Request approved and appraiser assigned (ID: {request_in.appraiser_id}). Date: {request_in.assessment_date}")
              else:
                  add_comment(request_in.comment_text or "Request approved by employee.")
 
@@ -168,9 +173,14 @@ async def update_valuation_request(
              if valuation_request.status != RequestStatus.APPROVED_BY_EMPLOYEE:
                   raise HTTPException(status_code=400, detail="Approve request before assigning appraiser")
              await validate_appraiser(request_in.appraiser_id)
+             
+             if not request_in.assessment_date:
+                     raise HTTPException(status_code=400, detail="Assessment date is required when assigning appraiser")
+
              valuation_request.appraiser_id = request_in.appraiser_id
+             valuation_request.assessment_date = request_in.assessment_date
              valuation_request.status = RequestStatus.APPRAISER_ASSIGNED
-             add_comment(request_in.comment_text or f"Appraiser assigned (ID: {request_in.appraiser_id}).")
+             add_comment(request_in.comment_text or f"Appraiser assigned (ID: {request_in.appraiser_id}). Date: {request_in.assessment_date}")
 
         # 3. Approve Report
         if request_in.status == RequestStatus.REPORT_APPROVED_BY_EMPLOYEE:
@@ -189,9 +199,19 @@ async def update_valuation_request(
         if valuation_request.appraiser_id != current_user.id:
              raise HTTPException(status_code=403, detail="Not your assignment")
         
-        # 4. Submit Report (In this new model, report is submitted as a status change + comment containing the report or link)
-        # Or we can treat "comment_text" as the report content when status changes.
-        if request_in.status == RequestStatus.REPORT_SUBMITTED:
+        # Self-cancellation logic
+        if request_in.status == RequestStatus.APPROVED_BY_EMPLOYEE: # Reverting status
+             if valuation_request.status != RequestStatus.APPRAISER_ASSIGNED:
+                  raise HTTPException(status_code=400, detail="Can only cancel assignment if in assigned status")
+             
+             add_comment(request_in.comment_text or "Appraiser declined the assignment.")
+             valuation_request.appraiser_id = None
+             valuation_request.assessment_date = None
+             valuation_request.status = RequestStatus.APPROVED_BY_EMPLOYEE
+             
+        
+        # 4. Submit Report
+        elif request_in.status == RequestStatus.REPORT_SUBMITTED:
              if valuation_request.status != RequestStatus.APPRAISER_ASSIGNED and valuation_request.status != RequestStatus.RETURNED_TO_EMPLOYEE:
                   raise HTTPException(status_code=400, detail="Cannot submit report at this stage")
              
@@ -202,7 +222,7 @@ async def update_valuation_request(
              add_comment(request_in.comment_text) # This comment IS the report or contains it
 
         # Allow Appraiser to comment/ask questions
-        if request_in.comment_text and not request_in.status:
+        elif request_in.comment_text and not request_in.status:
              add_comment(request_in.comment_text)
 
     # --- Client Logic ---

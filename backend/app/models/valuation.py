@@ -30,6 +30,8 @@ class ValuationRequest(Base):
     # Stores list of {role: str, text: str, created_at: str, action: str}
     comments = Column(JSON, default=list, nullable=False) 
     
+    assessment_date = Column(DateTime(timezone=True), nullable=True)
+
     # Foreign Keys
     client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     appraiser_id = Column(Integer, ForeignKey("users.id"), nullable=True)

@@ -23,6 +23,7 @@ class ValuationRequestUpdate(BaseModel):
     appraiser_id: Optional[int] = None
     status: Optional[RequestStatus] = None
     comment_text: Optional[str] = None # New comment to add
+    assessment_date: Optional[datetime] = None # Date of assessment
     
     # Editable property fields
     address: Optional[str] = None
@@ -35,6 +36,7 @@ class ValuationRequestResponse(ValuationRequestBase):
     status: RequestStatus
     client_id: int
     appraiser_id: Optional[int] = None
+    assessment_date: Optional[datetime] = None
     
     comments: List[CommentItem] = []
     
