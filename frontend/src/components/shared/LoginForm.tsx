@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import * as z from "zod";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
@@ -21,6 +21,7 @@ import {
     FieldGroup,
     FieldLabel,
 } from "@/components/ui/field";
+import { authService } from "@/lib/api/authService";
 
 const loginSchema = z.object({
     email: z
@@ -35,6 +36,7 @@ const loginSchema = z.object({
 
 export function LoginForm() {
     const [showPassword, setShowPassword] = useState(false);
+    const navigate = useNavigate();
 
     const form = useForm<z.infer<typeof loginSchema>>({
         resolver: zodResolver(loginSchema),
@@ -44,9 +46,17 @@ export function LoginForm() {
         },
     });
 
-    function onSubmit(data: z.infer<typeof loginSchema>) {
-        console.log(data);
-        // TODO: Implement login logic
+    async function onSubmit(data: z.infer<typeof loginSchema>) {
+        try {
+            const response = await authService.login(data.email, data.password);
+            localStorage.setItem("access_token", response.access_token);
+            console.log("Login successful:", response);
+            navigate("/dashboard");
+            // TODO: Navigate to dashboard
+        } catch (error) {
+            console.error("Login failed:", error);
+            // TODO: Show error toast
+        }
     }
 
     return (
