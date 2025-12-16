@@ -34,7 +34,7 @@ Backend-сервис для агентства оценки недвижимос
     ```env
     SECRET_KEY=ваш_надежный_ключ_минимум_32_символа
     ALGORITHM=HS256
-    DATABASE_URL=sqlite+aiosqlite:///./valuation.db
+    DATABASE_URL=sqlite+aiosqlite:///./data/valuation.db
     ```
 
 2.  **Сборка образа:**
@@ -49,13 +49,13 @@ Backend-сервис для агентства оценки недвижимос
     # Linux / MacOS
     docker run -d -p 8000:8000 \
       --env-file .env \
-      -v $(pwd)/valuation.db:/app/valuation.db \
+      -v $(pwd)/data:/app/data \
       valuation-backend
     
     # Windows (PowerShell)
     docker run -d -p 8000:8000 `
       --env-file .env `
-      -v ${PWD}/valuation.db:/app/valuation.db `
+      -v ${PWD}/data:/app/data `
       valuation-backend
     ```
     

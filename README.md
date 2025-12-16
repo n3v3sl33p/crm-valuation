@@ -13,7 +13,7 @@
 ```env
 SECRET_KEY=ваш_надежный_случайный_ключ
 ALGORITHM=HS256
-DATABASE_URL=sqlite+aiosqlite:///./valuation.db
+DATABASE_URL=sqlite+aiosqlite:///./data/valuation.db
 ```
 
 ### 2. Запуск
