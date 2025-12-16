@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import * as z from "zod";
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
+import toast from "react-hot-toast";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +60,7 @@ const registerSchema = z
     });
 
 export function RegisterForm() {
+    const navigate = useNavigate();
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -76,6 +78,7 @@ export function RegisterForm() {
 
     async function onSubmit(data: z.infer<typeof registerSchema>) {
         try {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { confirmPassword, ...rest } = data;
             const registerData: RegisterRequest = {
                 email: rest.email,
@@ -87,12 +90,18 @@ export function RegisterForm() {
                 password: rest.password,
             };
 
-            const response = await authService.register(registerData);
-            console.log("Registration successful:", response);
-            // TODO: Navigate to login or auto-login
-        } catch (error) {
+            await authService.register(registerData);
+            toast.success("Регистрация прошла успешно! Вы можете войти в систему.");
+            // Небольшая задержка перед навигацией, чтобы toast успел отобразиться
+            setTimeout(() => {
+                navigate("/login");
+            }, 1000);
+        } catch (error: unknown) {
             console.error("Registration failed:", error);
-            // TODO: Show error toast
+            const errorMessage =
+                (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+                "Не удалось зарегистрироваться. Проверьте введенные данные.";
+            toast.error(errorMessage);
         }
     }
 

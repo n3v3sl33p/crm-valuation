@@ -35,11 +35,26 @@ const updateValuationSchema = z.object({
 const statusActionSchema = z.object({
     status: z.string().optional(),
     appraiser_id: z.number().optional(),
+    assessment_date: z.string().optional(),
     comment_text: z.string().min(1, "Комментарий обязателен"),
+}).refine((data) => {
+    // Если назначается оценщик, то assessment_date обязателен
+    if (data.appraiser_id !== undefined && data.appraiser_id !== null) {
+        return !!data.assessment_date;
+    }
+    return true;
+}, {
+    message: "Дата оценки обязательна при назначении оценщика",
+    path: ["assessment_date"],
+});
+
+const rejectSchema = z.object({
+    comment_text: z.string().min(1, "Причина отказа обязательна"),
 });
 
 type UpdateValuationForm = z.infer<typeof updateValuationSchema>;
 type StatusActionForm = z.infer<typeof statusActionSchema>;
+type RejectForm = z.infer<typeof rejectSchema>;
 
 export function ValuationDetail() {
     const { id } = useParams<{ id: string }>();
@@ -52,6 +67,9 @@ export function ValuationDetail() {
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [returnComment, setReturnComment] = useState("");
+    const [approveComment, setApproveComment] = useState("");
+    const [approveReportComment, setApproveReportComment] = useState("");
 
     const form = useForm<UpdateValuationForm>({
         resolver: zodResolver(updateValuationSchema),
@@ -69,6 +87,14 @@ export function ValuationDetail() {
         defaultValues: {
             status: "",
             appraiser_id: undefined,
+            assessment_date: "",
+            comment_text: "",
+        },
+    });
+
+    const rejectForm = useForm<RejectForm>({
+        resolver: zodResolver(rejectSchema),
+        defaultValues: {
             comment_text: "",
         },
     });
@@ -162,7 +188,8 @@ export function ValuationDetail() {
                 property_type: data.property_type,
                 room_count: data.room_count,
                 room_details: data.room_details,
-                status: "CREATED",
+                // Сохраняем текущий статус при редактировании
+                status: valuation.status,
                 appraiser_id: valuation.appraiser_id || 0,
             };
 
@@ -183,7 +210,7 @@ export function ValuationDetail() {
     };
 
     const handleStatusAction = async (data: StatusActionForm) => {
-        if (!id || !valuation) return;
+        if (!id || !valuation || !currentUser) return;
 
         try {
             setIsSubmitting(true);
@@ -197,8 +224,19 @@ export function ValuationDetail() {
                 updateData.status = data.status as UpdateValuationRequest["status"];
                 
                 // Определяем сообщение в зависимости от статуса
-                if (data.status === "APPROVED_BY_EMPLOYEE") {
-                    successMessage = "Заявка успешно одобрена!";
+                if (data.status === "CREATED") {
+                    successMessage = "Заявка отправлена на согласование!";
+                } else if (data.status === "APPROVED_BY_EMPLOYEE") {
+                    // Проверяем, это отказ оценщика или одобрение сотрудника
+                    if (currentUser.role === "APPRAISER" && valuation.status === "APPRAISER_ASSIGNED") {
+                        successMessage = "Заявка возвращена сотруднику для переназначения";
+                    } else {
+                        successMessage = "Заявка успешно одобрена!";
+                    }
+                } else if (data.status === "RETURNED_TO_CLIENT") {
+                    successMessage = "Заявка возвращена на доработку!";
+                } else if (data.status === "RETURNED_TO_APPRAISER") {
+                    successMessage = "Отчет возвращен оценщику на доработку!";
                 } else if (data.status === "REPORT_SUBMITTED") {
                     successMessage = "Отчет успешно сдан!";
                 } else if (data.status === "REPORT_APPROVED_BY_EMPLOYEE") {
@@ -213,9 +251,16 @@ export function ValuationDetail() {
                 successMessage = "Оценщик успешно назначен!";
             }
 
+            if (data.assessment_date) {
+                // Преобразуем локальную дату в ISO формат
+                const date = new Date(data.assessment_date);
+                updateData.assessment_date = date.toISOString();
+            }
+
             await valuationService.updateValuation(parseInt(id), updateData);
             toast.success(successMessage);
             statusForm.reset();
+            rejectForm.reset();
             await refreshValuation();
         } catch (err) {
             console.error("Error updating status:", err);
@@ -256,6 +301,7 @@ export function ValuationDetail() {
 
     const getStatusLabel = (status: string) => {
         const statusMap: Record<string, string> = {
+            DRAFT: "Черновик",
             CREATED: "Создана",
             IN_PROGRESS: "В работе",
             COMPLETED: "Завершена",
@@ -264,6 +310,8 @@ export function ValuationDetail() {
             APPROVED_BY_EMPLOYEE: "Одобрена сотрудником",
             REPORT_SUBMITTED: "Отчет сдан",
             REPORT_APPROVED_BY_EMPLOYEE: "Отчет утвержден",
+            RETURNED_TO_CLIENT: "Возвращена на доработку",
+            RETURNED_TO_APPRAISER: "Отчет возвращен оценщику",
         };
         return statusMap[status] || status;
     };
@@ -288,23 +336,33 @@ export function ValuationDetail() {
         );
     }
 
-    const canEdit = valuation.status === "CREATED" && currentUser.role === "CLIENT";
+    // Определяем доступные действия в зависимости от роли и статуса
     const isEmployee = currentUser.role === "EMPLOYEE";
     const isAppraiser = currentUser.role === "APPRAISER";
     const isClient = currentUser.role === "CLIENT";
 
-    // Определяем доступные действия в зависимости от роли и статуса
+    // Клиент может редактировать заявку в статусе DRAFT или RETURNED_TO_CLIENT
+    const canEdit = isClient && (valuation.status === "DRAFT" || valuation.status === "RETURNED_TO_CLIENT");
+    
+    // Клиент может отправить заявку из DRAFT или RETURNED_TO_CLIENT в CREATED
+    const canSubmitDraft = isClient && (valuation.status === "DRAFT" || valuation.status === "RETURNED_TO_CLIENT");
+    
+    // Сотрудник может вернуть заявку на доработку или одобрить
+    const canReturnToClient = isEmployee && valuation.status === "CREATED";
     const canApprove = isEmployee && valuation.status === "CREATED";
     const canAssignAppraiser = isEmployee && valuation.status === "APPROVED_BY_EMPLOYEE";
-    const canSubmitReport = isAppraiser && valuation.status === "APPRAISER_ASSIGNED";
+    const canSubmitReport = isAppraiser && (valuation.status === "APPRAISER_ASSIGNED" || valuation.status === "RETURNED_TO_APPRAISER");
+    const canRejectByAppraiser = isAppraiser && valuation.status === "APPRAISER_ASSIGNED";
+    const canReturnToAppraiser = isEmployee && valuation.status === "REPORT_SUBMITTED";
     const canApproveReport = isEmployee && valuation.status === "REPORT_SUBMITTED";
-    const canComplete = isClient && valuation.status === "REPORT_APPROVED_BY_EMPLOYEE";
+    // Клиент просто получает отчет, не может принимать работу
+    // const canComplete = isClient && valuation.status === "REPORT_APPROVED_BY_EMPLOYEE";
 
     return (
         <div>
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-3xl font-bold">Детали заявки</h1>
-                {canEdit && (
+                {(canEdit || (isClient && valuation.status === "DRAFT")) && (
                     <Button
                         variant="destructive"
                         onClick={handleDeleteValuation}
@@ -472,13 +530,44 @@ export function ValuationDetail() {
                                     )}
                                 />
                             </FieldGroup>
-                            <Button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full"
-                            >
-                                {isSubmitting ? "Сохранение..." : "Сохранить"}
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="flex-1"
+                                >
+                                    {isSubmitting ? "Сохранение..." : "Сохранить"}
+                                </Button>
+                                {canSubmitDraft && (
+                                    <Button
+                                        type="button"
+                                        variant="default"
+                                        disabled={isSubmitting}
+                                        onClick={async () => {
+                                            try {
+                                                setIsSubmitting(true);
+                                                await valuationService.updateValuation(
+                                                    parseInt(id!),
+                                                    {
+                                                        status: "CREATED",
+                                                        comment_text: "Отправляю на согласование.",
+                                                    },
+                                                );
+                                                toast.success("Заявка отправлена на согласование!");
+                                                await refreshValuation();
+                                            } catch (err) {
+                                                console.error("Error submitting draft:", err);
+                                                toast.error("Не удалось отправить заявку");
+                                            } finally {
+                                                setIsSubmitting(false);
+                                            }
+                                        }}
+                                        className="flex-1"
+                                    >
+                                        Отправить на согласование
+                                    </Button>
+                                )}
+                            </div>
                         </form>
                     ) : (
                         <div className="space-y-3">
@@ -519,19 +608,19 @@ export function ValuationDetail() {
 
                     <Separator />
 
-                    {/* Действия для EMPLOYEE */}
-                    {canApprove && (
+                    {/* Действия для CLIENT - отправка заявки */}
+                    {canSubmitDraft && !canEdit && (
                         <form
                             onSubmit={statusForm.handleSubmit((data) =>
                                 handleStatusAction({
                                     ...data,
-                                    status: "APPROVED_BY_EMPLOYEE",
+                                    status: "CREATED",
                                 }),
                             )}
                             className="space-y-3 border rounded-lg p-4"
                         >
                             <h3 className="text-sm font-semibold mb-3">
-                                Одобрить заявку
+                                Отправить заявку на согласование
                             </h3>
                             <FieldGroup>
                                 <Controller
@@ -539,13 +628,13 @@ export function ValuationDetail() {
                                     control={statusForm.control}
                                     render={({ field, fieldState }) => (
                                         <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="approve_comment">
+                                            <FieldLabel htmlFor="submit_comment">
                                                 Комментарий
                                             </FieldLabel>
                                             <textarea
                                                 {...field}
-                                                id="approve_comment"
-                                                placeholder="Например: Заявка принята. Ищем оценщика."
+                                                id="submit_comment"
+                                                placeholder="Отправляю на согласование."
                                                 aria-invalid={fieldState.invalid}
                                                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                 rows={3}
@@ -558,6 +647,100 @@ export function ValuationDetail() {
                                         </Field>
                                     )}
                                 />
+                            </FieldGroup>
+                            <Button
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="w-full"
+                            >
+                                {isSubmitting
+                                    ? "Отправка..."
+                                    : "Отправить на согласование"}
+                            </Button>
+                        </form>
+                    )}
+
+                    {/* Действия для EMPLOYEE */}
+                    {canReturnToClient && (
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!returnComment.trim()) {
+                                    toast.error("Комментарий обязателен");
+                                    return;
+                                }
+                                await handleStatusAction({
+                                    comment_text: returnComment,
+                                    status: "RETURNED_TO_CLIENT",
+                                });
+                                setReturnComment("");
+                            }}
+                            className="space-y-3 border rounded-lg p-4 border-orange-500/50"
+                        >
+                            <h3 className="text-sm font-semibold mb-3 text-orange-600">
+                                Вернуть на доработку
+                            </h3>
+                            <FieldGroup>
+                                <Field>
+                                    <FieldLabel htmlFor="return_comment">
+                                        Комментарий
+                                    </FieldLabel>
+                                    <textarea
+                                        id="return_comment"
+                                        value={returnComment}
+                                        onChange={(e) => setReturnComment(e.target.value)}
+                                        placeholder="Уточните номер квартиры в адресе."
+                                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        rows={3}
+                                    />
+                                </Field>
+                            </FieldGroup>
+                            <Button
+                                type="submit"
+                                variant="outline"
+                                disabled={isSubmitting}
+                                className="w-full border-orange-500 text-orange-600 hover:bg-orange-50"
+                            >
+                                {isSubmitting
+                                    ? "Возврат..."
+                                    : "Вернуть на доработку"}
+                            </Button>
+                        </form>
+                    )}
+
+                    {canApprove && (
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!approveComment.trim()) {
+                                    toast.error("Комментарий обязателен");
+                                    return;
+                                }
+                                await handleStatusAction({
+                                    comment_text: approveComment,
+                                    status: "APPROVED_BY_EMPLOYEE",
+                                });
+                                setApproveComment("");
+                            }}
+                            className="space-y-3 border rounded-lg p-4"
+                        >
+                            <h3 className="text-sm font-semibold mb-3">
+                                Одобрить заявку
+                            </h3>
+                            <FieldGroup>
+                                <Field>
+                                    <FieldLabel htmlFor="approve_comment">
+                                        Комментарий
+                                    </FieldLabel>
+                                    <textarea
+                                        id="approve_comment"
+                                        value={approveComment}
+                                        onChange={(e) => setApproveComment(e.target.value)}
+                                        placeholder="Например: Заявка принята. Ищем оценщика."
+                                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        rows={3}
+                                    />
+                                </Field>
                             </FieldGroup>
                             <Button
                                 type="submit"
@@ -631,6 +814,29 @@ export function ValuationDetail() {
                                     )}
                                 />
                                 <Controller
+                                    name="assessment_date"
+                                    control={statusForm.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="assessment_date">
+                                                Дата оценки
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="assessment_date"
+                                                type="datetime-local"
+                                                aria-invalid={fieldState.invalid}
+                                                className="h-9"
+                                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+                                <Controller
                                     name="comment_text"
                                     control={statusForm.control}
                                     render={({ field, fieldState }) => (
@@ -641,7 +847,7 @@ export function ValuationDetail() {
                                             <textarea
                                                 {...field}
                                                 id="assign_comment"
-                                                placeholder="Например: Назначен оценщик user3."
+                                                placeholder="Например: Назначен оценщик user3 на 25 декабря."
                                                 aria-invalid={fieldState.invalid}
                                                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                 rows={3}
@@ -669,69 +875,125 @@ export function ValuationDetail() {
 
                     {/* Действия для APPRAISER */}
                     {canSubmitReport && (
-                        <form
-                            onSubmit={statusForm.handleSubmit((data) =>
-                                handleStatusAction({
-                                    ...data,
-                                    status: "REPORT_SUBMITTED",
-                                }),
-                            )}
-                            className="space-y-3 border rounded-lg p-4"
-                        >
-                            <h3 className="text-sm font-semibold mb-3">
-                                Сдать отчет
-                            </h3>
-                            <FieldGroup>
-                                <Controller
-                                    name="comment_text"
-                                    control={statusForm.control}
-                                    render={({ field, fieldState }) => (
-                                        <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="report_comment">
-                                                Содержание отчета
-                                            </FieldLabel>
-                                            <textarea
-                                                {...field}
-                                                id="report_comment"
-                                                placeholder="Оценка завершена. Рыночная стоимость: 12 млн. руб. Ссылка на отчет: http://..."
-                                                aria-invalid={fieldState.invalid}
-                                                className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                                rows={5}
-                                            />
-                                            {fieldState.invalid && (
-                                                <FieldError
-                                                    errors={[fieldState.error]}
-                                                />
-                                            )}
-                                        </Field>
-                                    )}
-                                />
-                            </FieldGroup>
-                            <Button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full"
+                        <>
+                            <form
+                                onSubmit={statusForm.handleSubmit((data) =>
+                                    handleStatusAction({
+                                        ...data,
+                                        status: "REPORT_SUBMITTED",
+                                    }),
+                                )}
+                                className="space-y-3 border rounded-lg p-4"
                             >
-                                {isSubmitting
-                                    ? "Отправка..."
-                                    : "Сдать отчет"}
-                            </Button>
-                        </form>
+                                <h3 className="text-sm font-semibold mb-3">
+                                    {valuation.status === "RETURNED_TO_APPRAISER" 
+                                        ? "Доработать и сдать отчет" 
+                                        : "Сдать отчет"}
+                                </h3>
+                                <FieldGroup>
+                                    <Controller
+                                        name="comment_text"
+                                        control={statusForm.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="report_comment">
+                                                    Содержание отчета
+                                                </FieldLabel>
+                                                <textarea
+                                                    {...field}
+                                                    id="report_comment"
+                                                    placeholder="Оценка завершена. Рыночная стоимость: 12 млн. руб. Ссылка на отчет: http://..."
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    rows={5}
+                                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                </FieldGroup>
+                                <Button
+                                    type="submit"
+                                    disabled={isSubmitting}
+                                    className="w-full"
+                                >
+                                    {isSubmitting
+                                        ? "Отправка..."
+                                        : "Сдать отчет"}
+                                </Button>
+                            </form>
+
+                            {canRejectByAppraiser && (
+                                <form
+                                    onSubmit={rejectForm.handleSubmit((data) =>
+                                        handleStatusAction({
+                                            ...data,
+                                            status: "APPROVED_BY_EMPLOYEE",
+                                        }),
+                                    )}
+                                    className="space-y-3 border rounded-lg p-4 border-destructive/50"
+                                >
+                                    <h3 className="text-sm font-semibold mb-3 text-destructive">
+                                        Отказаться от заявки
+                                    </h3>
+                                    <FieldGroup>
+                                        <Controller
+                                            name="comment_text"
+                                            control={rejectForm.control}
+                                            render={({ field, fieldState }) => (
+                                                <Field data-invalid={fieldState.invalid}>
+                                                    <FieldLabel htmlFor="reject_comment">
+                                                        Причина отказа
+                                                    </FieldLabel>
+                                                    <textarea
+                                                        {...field}
+                                                        id="reject_comment"
+                                                        placeholder="Не могу выехать на объект в назначенное время."
+                                                        aria-invalid={fieldState.invalid}
+                                                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                                        rows={3}
+                                                    />
+                                                    {fieldState.invalid && (
+                                                        <FieldError
+                                                            errors={[fieldState.error]}
+                                                        />
+                                                    )}
+                                                </Field>
+                                            )}
+                                        />
+                                    </FieldGroup>
+                                    <Button
+                                        type="submit"
+                                        variant="outline"
+                                        disabled={isSubmitting}
+                                        className="w-full border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                    >
+                                        {isSubmitting
+                                            ? "Отказ..."
+                                            : "Вернуть заявку сотруднику"}
+                                    </Button>
+                                </form>
+                            )}
+                        </>
                     )}
 
-                    {/* Действия для EMPLOYEE - утверждение отчета */}
-                    {canApproveReport && (
+                    {/* Действия для EMPLOYEE - проверка отчета */}
+                    {canReturnToAppraiser && (
                         <form
                             onSubmit={statusForm.handleSubmit((data) =>
                                 handleStatusAction({
                                     ...data,
-                                    status: "REPORT_APPROVED_BY_EMPLOYEE",
+                                    status: "RETURNED_TO_APPRAISER",
                                 }),
                             )}
-                            className="space-y-3 border rounded-lg p-4"
+                            className="space-y-3 border rounded-lg p-4 border-orange-500/50"
                         >
-                            <h3 className="text-sm font-semibold mb-3">
-                                Утвердить отчет
+                            <h3 className="text-sm font-semibold mb-3 text-orange-600">
+                                Вернуть отчет оценщику
                             </h3>
                             <FieldGroup>
                                 <Controller
@@ -739,13 +1001,13 @@ export function ValuationDetail() {
                                     control={statusForm.control}
                                     render={({ field, fieldState }) => (
                                         <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="approve_report_comment">
+                                            <FieldLabel htmlFor="return_to_appraiser_comment">
                                                 Комментарий
                                             </FieldLabel>
                                             <textarea
                                                 {...field}
-                                                id="approve_report_comment"
-                                                placeholder="Отчет проверен, отправлен клиенту."
+                                                id="return_to_appraiser_comment"
+                                                placeholder="Отчет неполный, добавьте фото кухни."
                                                 aria-invalid={fieldState.invalid}
                                                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                                 rows={3}
@@ -758,6 +1020,53 @@ export function ValuationDetail() {
                                         </Field>
                                     )}
                                 />
+                            </FieldGroup>
+                            <Button
+                                type="submit"
+                                variant="outline"
+                                disabled={isSubmitting}
+                                className="w-full border-orange-500 text-orange-600 hover:bg-orange-50"
+                            >
+                                {isSubmitting
+                                    ? "Возврат..."
+                                    : "Вернуть на доработку"}
+                            </Button>
+                        </form>
+                    )}
+
+                    {canApproveReport && (
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!approveReportComment.trim()) {
+                                    toast.error("Комментарий обязателен");
+                                    return;
+                                }
+                                await handleStatusAction({
+                                    comment_text: approveReportComment,
+                                    status: "REPORT_APPROVED_BY_EMPLOYEE",
+                                });
+                                setApproveReportComment("");
+                            }}
+                            className="space-y-3 border rounded-lg p-4"
+                        >
+                            <h3 className="text-sm font-semibold mb-3">
+                                Утвердить отчет
+                            </h3>
+                            <FieldGroup>
+                                <Field>
+                                    <FieldLabel htmlFor="approve_report_comment">
+                                        Комментарий
+                                    </FieldLabel>
+                                    <textarea
+                                        id="approve_report_comment"
+                                        value={approveReportComment}
+                                        onChange={(e) => setApproveReportComment(e.target.value)}
+                                        placeholder="Отчет проверен, отправлен клиенту."
+                                        className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        rows={3}
+                                    />
+                                </Field>
                             </FieldGroup>
                             <Button
                                 type="submit"
@@ -767,58 +1076,6 @@ export function ValuationDetail() {
                                 {isSubmitting
                                     ? "Утверждение..."
                                     : "Утвердить отчет"}
-                            </Button>
-                        </form>
-                    )}
-
-                    {/* Действия для CLIENT - завершение заявки */}
-                    {canComplete && (
-                        <form
-                            onSubmit={statusForm.handleSubmit((data) =>
-                                handleStatusAction({
-                                    ...data,
-                                    status: "COMPLETED",
-                                }),
-                            )}
-                            className="space-y-3 border rounded-lg p-4"
-                        >
-                            <h3 className="text-sm font-semibold mb-3">
-                                Принять работу
-                            </h3>
-                            <FieldGroup>
-                                <Controller
-                                    name="comment_text"
-                                    control={statusForm.control}
-                                    render={({ field, fieldState }) => (
-                                        <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="complete_comment">
-                                                Комментарий
-                                            </FieldLabel>
-                                            <textarea
-                                                {...field}
-                                                id="complete_comment"
-                                                placeholder="Спасибо, работа принята."
-                                                aria-invalid={fieldState.invalid}
-                                                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                                rows={3}
-                                            />
-                                            {fieldState.invalid && (
-                                                <FieldError
-                                                    errors={[fieldState.error]}
-                                                />
-                                            )}
-                                        </Field>
-                                    )}
-                                />
-                            </FieldGroup>
-                            <Button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="w-full"
-                            >
-                                {isSubmitting
-                                    ? "Принятие..."
-                                    : "Принять работу"}
                             </Button>
                         </form>
                     )}
@@ -879,6 +1136,16 @@ export function ValuationDetail() {
                                             {appraiser.phone}
                                         </p>
                                     </div>
+                                    {valuation.assessment_date && (
+                                        <div>
+                                            <label className="text-xs font-medium text-muted-foreground">
+                                                Дата оценки
+                                            </label>
+                                            <p className="mt-1 text-sm">
+                                                {formatDate(valuation.assessment_date)}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </>

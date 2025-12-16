@@ -123,6 +123,7 @@ export function Applications() {
 
     const getStatusLabel = (status: string) => {
         const statusMap: Record<string, string> = {
+            DRAFT: "Черновик",
             CREATED: "Создана",
             IN_PROGRESS: "В работе",
             COMPLETED: "Завершена",
@@ -131,6 +132,8 @@ export function Applications() {
             APPROVED_BY_EMPLOYEE: "Одобрена сотрудником",
             REPORT_SUBMITTED: "Отчет сдан",
             REPORT_APPROVED_BY_EMPLOYEE: "Отчет утвержден",
+            RETURNED_TO_CLIENT: "Возвращена на доработку",
+            RETURNED_TO_APPRAISER: "Отчет возвращен оценщику",
         };
         return statusMap[status] || status;
     };

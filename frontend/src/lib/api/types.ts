@@ -55,9 +55,10 @@ export interface Valuation {
     room_count: number;
     room_details: string;
     id: number;
-    status: "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "APPRAISER_ASSIGNED" | "APPROVED_BY_EMPLOYEE" | "REPORT_SUBMITTED" | "REPORT_APPROVED_BY_EMPLOYEE";
+    status: "DRAFT" | "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "APPRAISER_ASSIGNED" | "APPROVED_BY_EMPLOYEE" | "REPORT_SUBMITTED" | "REPORT_APPROVED_BY_EMPLOYEE" | "RETURNED_TO_CLIENT" | "RETURNED_TO_APPRAISER";
     client_id: number;
     appraiser_id: number | null;
+    assessment_date: string | null;
     comments: Comment[];
     created_at: string;
     updated_at: string;
@@ -72,7 +73,8 @@ export interface CreateValuationRequest {
 
 export interface UpdateValuationRequest {
     appraiser_id?: number;
-    status?: "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "APPRAISER_ASSIGNED" | "APPROVED_BY_EMPLOYEE" | "REPORT_SUBMITTED" | "REPORT_APPROVED_BY_EMPLOYEE";
+    assessment_date?: string;
+    status?: "DRAFT" | "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "APPRAISER_ASSIGNED" | "APPROVED_BY_EMPLOYEE" | "REPORT_SUBMITTED" | "REPORT_APPROVED_BY_EMPLOYEE" | "RETURNED_TO_CLIENT" | "RETURNED_TO_APPRAISER";
     comment_text?: string;
     address?: string;
     property_type?: string;
