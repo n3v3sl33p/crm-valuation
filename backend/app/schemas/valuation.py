@@ -19,7 +19,7 @@ class ValuationRequestBase(BaseModel):
     # Type and Details
     property_type: PropertyType
     room_count: int = Field(..., description="Number of rooms or spaces")
-    room_details: str = Field(..., description="General description")
+    description: Optional[str] = Field(None, description="Comment to request / Additional details")
 
     # Optional specifics
     apartment_number: Optional[str] = None
@@ -41,7 +41,7 @@ class ValuationRequestUpdate(BaseModel):
     house_number: Optional[str] = None
     property_type: Optional[PropertyType] = None
     room_count: Optional[int] = None
-    room_details: Optional[str] = None
+    description: Optional[str] = None
     apartment_number: Optional[str] = None
     floor: Optional[int] = None
     office_number: Optional[str] = None

@@ -132,7 +132,7 @@ async def update_valuation_request(
         return appraiser
 
     # --- Property Details Updates (Client Editing) ---
-    property_fields = ["city", "street", "house_number", "property_type", "room_count", "room_details", "apartment_number", "floor", "office_number"]
+    property_fields = ["city", "street", "house_number", "property_type", "room_count", "description", "apartment_number", "floor", "office_number"]
     has_property_updates = any(getattr(request_in, field) is not None for field in property_fields)
     
     if has_property_updates:

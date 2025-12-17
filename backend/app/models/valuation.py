@@ -48,7 +48,7 @@ class ValuationRequest(Base):
     
     # General details (room count, area, etc.)
     room_count = Column(Integer, nullable=False) # Or generic "space count"
-    room_details = Column(Text, nullable=False)  # Description
+    description = Column(Text, nullable=True)    # Client comment / Additional details
     
     status = Column(Enum(RequestStatus), default=RequestStatus.DRAFT, nullable=False)
     
