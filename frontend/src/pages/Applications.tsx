@@ -33,13 +33,39 @@ import { userService } from "@/lib/api/userService";
 import type { Valuation, User } from "@/lib/api/types";
 
 const createValuationSchema = z.object({
-    address: z.string().min(1, "Адрес обязателен для заполнения"),
-    property_type: z.string().min(1, "Тип недвижимости обязателен"),
-    room_count: z
+    city: z.string().min(1, "Город обязателен для заполнения"),
+    street: z.string().min(1, "Улица обязательна для заполнения"),
+    house_number: z.string().min(1, "Номер дома обязателен для заполнения"),
+    property_type: z.enum(["APARTMENT", "OFFICE", "HOUSE"]),
+    apartment_number: z.string().optional(),
+    office_number: z.string().optional(),
+    floor: z
         .number()
-        .min(1, "Количество комнат должно быть больше 0")
-        .int("Количество комнат должно быть целым числом"),
-    room_details: z.string().min(1, "Детали комнат обязательны"),
+        .int("Этаж должен быть целым числом")
+        .optional(),
+    description: z.string().optional(),
+}).superRefine((data, ctx) => {
+    if (data.property_type === "APARTMENT" && !data.apartment_number) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Номер квартиры обязателен для квартир",
+            path: ["apartment_number"],
+        });
+    }
+    if (data.property_type === "APARTMENT" && !data.floor) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Этаж обязателен для квартир",
+            path: ["floor"],
+        });
+    }
+    if (data.property_type === "OFFICE" && !data.office_number) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Номер офиса обязателен для офисов",
+            path: ["office_number"],
+        });
+    }
 });
 
 type CreateValuationForm = z.infer<typeof createValuationSchema>;
@@ -56,12 +82,18 @@ export function Applications() {
     const form = useForm<CreateValuationForm>({
         resolver: zodResolver(createValuationSchema),
         defaultValues: {
-            address: "",
-            property_type: "",
-            room_count: 1,
-            room_details: "",
+            city: "",
+            street: "",
+            house_number: "",
+            property_type: "APARTMENT",
+            apartment_number: "",
+            office_number: "",
+            floor: undefined,
+            description: "",
         },
     });
+
+    const propertyType = form.watch("property_type");
 
     const fetchValuations = async () => {
         try {
@@ -152,7 +184,7 @@ export function Applications() {
             </div>
 
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogContent>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Создать новую заявку</DialogTitle>
                         <DialogDescription>
@@ -164,19 +196,65 @@ export function Applications() {
                         onSubmit={form.handleSubmit(handleCreateValuation)}
                         className="space-y-4"
                     >
-                        <FieldGroup>
+                        <FieldGroup className="grid grid-cols-2 gap-4">
                             <Controller
-                                name="address"
+                                name="city"
                                 control={form.control}
                                 render={({ field, fieldState }) => (
                                     <Field data-invalid={fieldState.invalid}>
-                                        <FieldLabel htmlFor="address">
-                                            Адрес
+                                        <FieldLabel htmlFor="city">
+                                            Город
                                         </FieldLabel>
                                         <Input
                                             {...field}
-                                            id="address"
-                                            placeholder="Введите адрес"
+                                            id="city"
+                                            placeholder="Москва"
+                                            aria-invalid={fieldState.invalid}
+                                        />
+                                        {fieldState.invalid && (
+                                            <FieldError
+                                                errors={[fieldState.error]}
+                                            />
+                                        )}
+                                    </Field>
+                                )}
+                            />
+
+                            <Controller
+                                name="street"
+                                control={form.control}
+                                render={({ field, fieldState }) => (
+                                    <Field data-invalid={fieldState.invalid}>
+                                        <FieldLabel htmlFor="street">
+                                            Улица
+                                        </FieldLabel>
+                                        <Input
+                                            {...field}
+                                            id="street"
+                                            placeholder="Улица Пушкина"
+                                            aria-invalid={fieldState.invalid}
+                                        />
+                                        {fieldState.invalid && (
+                                            <FieldError
+                                                errors={[fieldState.error]}
+                                            />
+                                        )}
+                                    </Field>
+                                )}
+                            />
+
+                            <Controller
+                                name="house_number"
+                                control={form.control}
+                                render={({ field, fieldState }) => (
+                                    <Field data-invalid={fieldState.invalid}>
+                                        <FieldLabel htmlFor="house_number">
+                                            Номер дома
+                                        </FieldLabel>
+                                        <Input
+                                            {...field}
+                                            id="house_number"
+                                            placeholder="10"
                                             aria-invalid={fieldState.invalid}
                                         />
                                         {fieldState.invalid && (
@@ -196,12 +274,15 @@ export function Applications() {
                                         <FieldLabel htmlFor="property_type">
                                             Тип недвижимости
                                         </FieldLabel>
-                                        <Input
+                                        <select
                                             {...field}
                                             id="property_type"
-                                            placeholder="Например: Квартира, Дом"
-                                            aria-invalid={fieldState.invalid}
-                                        />
+                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                        >
+                                            <option value="APARTMENT">Квартира</option>
+                                            <option value="OFFICE">Офис</option>
+                                            <option value="HOUSE">Дом</option>
+                                        </select>
                                         {fieldState.invalid && (
                                             <FieldError
                                                 errors={[fieldState.error]}
@@ -211,50 +292,136 @@ export function Applications() {
                                 )}
                             />
 
-                            <Controller
-                                name="room_count"
-                                control={form.control}
-                                render={({ field, fieldState }) => (
-                                    <Field data-invalid={fieldState.invalid}>
-                                        <FieldLabel htmlFor="room_count">
-                                            Количество комнат
-                                        </FieldLabel>
-                                        <Input
-                                            {...field}
-                                            id="room_count"
-                                            type="number"
-                                            min="1"
-                                            onChange={(e) =>
-                                                field.onChange(
-                                                    parseInt(e.target.value) ||
-                                                        0,
-                                                )
-                                            }
-                                            value={field.value}
-                                            placeholder="Введите количество комнат"
-                                            aria-invalid={fieldState.invalid}
-                                        />
-                                        {fieldState.invalid && (
-                                            <FieldError
-                                                errors={[fieldState.error]}
+                            {propertyType === "APARTMENT" && (
+                                <Controller
+                                    name="apartment_number"
+                                    control={form.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="apartment_number">
+                                                Номер квартиры
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="apartment_number"
+                                                placeholder="45"
+                                                aria-invalid={fieldState.invalid}
                                             />
-                                        )}
-                                    </Field>
-                                )}
-                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+                            )}
+
+                            {propertyType === "OFFICE" && (
+                                <Controller
+                                    name="office_number"
+                                    control={form.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="office_number">
+                                                Номер офиса
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="office_number"
+                                                placeholder="301"
+                                                aria-invalid={fieldState.invalid}
+                                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+                            )}
+
+                            {propertyType === "APARTMENT" && (
+                                <Controller
+                                    name="floor"
+                                    control={form.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="floor">
+                                                Этаж
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="floor"
+                                                type="number"
+                                                value={field.value ?? ""}
+                                                onChange={(e) =>
+                                                    field.onChange(
+                                                        e.target.value === ""
+                                                            ? undefined
+                                                            : parseInt(e.target.value, 10),
+                                                    )
+                                                }
+                                                placeholder="5"
+                                                aria-invalid={fieldState.invalid}
+                                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+                            )}
+
+                            {propertyType === "OFFICE" && (
+                                <Controller
+                                    name="floor"
+                                    control={form.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="floor">
+                                                Этаж (необязательно)
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="floor"
+                                                type="number"
+                                                value={field.value ?? ""}
+                                                onChange={(e) =>
+                                                    field.onChange(
+                                                        e.target.value === ""
+                                                            ? undefined
+                                                            : parseInt(e.target.value, 10),
+                                                    )
+                                                }
+                                                placeholder="5"
+                                                aria-invalid={fieldState.invalid}
+                                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+                            )}
 
                             <Controller
-                                name="room_details"
+                                name="description"
                                 control={form.control}
                                 render={({ field, fieldState }) => (
-                                    <Field data-invalid={fieldState.invalid}>
-                                        <FieldLabel htmlFor="room_details">
-                                            Детали комнат
+                                    <Field data-invalid={fieldState.invalid} className="col-span-2">
+                                        <FieldLabel htmlFor="description">
+                                            Описание (необязательно)
                                         </FieldLabel>
                                         <Input
                                             {...field}
-                                            id="room_details"
-                                            placeholder="Опишите детали комнат"
+                                            id="description"
+                                            placeholder="Дополнительное описание объекта"
                                             aria-invalid={fieldState.invalid}
                                         />
                                         {fieldState.invalid && (
@@ -301,8 +468,7 @@ export function Applications() {
                             <TableHead>ID</TableHead>
                             <TableHead>Адрес</TableHead>
                             <TableHead>Тип недвижимости</TableHead>
-                            <TableHead>Количество комнат</TableHead>
-                            <TableHead>Детали комнат</TableHead>
+                            <TableHead>Описание</TableHead>
                             <TableHead>Статус</TableHead>
                             <TableHead>Дата создания</TableHead>
                             <TableHead>Дата обновления</TableHead>
@@ -316,10 +482,13 @@ export function Applications() {
                                 className="cursor-pointer"
                             >
                                 <TableCell>{valuation.id}</TableCell>
-                                <TableCell>{valuation.address}</TableCell>
+                                <TableCell>
+                                    {valuation.city}, {valuation.street}, д. {valuation.house_number}
+                                    {valuation.apartment_number && `, кв. ${valuation.apartment_number}`}
+                                    {valuation.office_number && `, оф. ${valuation.office_number}`}
+                                </TableCell>
                                 <TableCell>{valuation.property_type}</TableCell>
-                                <TableCell>{valuation.room_count}</TableCell>
-                                <TableCell>{valuation.room_details}</TableCell>
+                                <TableCell>{valuation.description || "-"}</TableCell>
                                 <TableCell>
                                     {getStatusLabel(valuation.status)}
                                 </TableCell>

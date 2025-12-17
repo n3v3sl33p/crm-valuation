@@ -50,25 +50,40 @@ export interface Comment {
 }
 
 export interface Valuation {
-    address: string;
-    property_type: string;
-    room_count: number;
-    room_details: string;
+    city: string;
+    street: string;
+    house_number: string;
+    property_type: "APARTMENT" | "OFFICE" | "HOUSE" | "WAREHOUSE" | "COMMERCIAL";
+    apartment_number?: string | null;
+    office_number?: string | null;
+    floor?: number | null;
+    description?: string | null;
     id: number;
     status: "DRAFT" | "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "APPRAISER_ASSIGNED" | "APPROVED_BY_EMPLOYEE" | "REPORT_SUBMITTED" | "REPORT_APPROVED_BY_EMPLOYEE" | "RETURNED_TO_CLIENT" | "RETURNED_TO_APPRAISER";
     client_id: number;
     appraiser_id: number | null;
     assessment_date: string | null;
+    report_url?: string | null;
+    final_price?: number | null;
+    condition_score?: number | null;
+    location_score?: number | null;
+    liquidity_score?: number | null;
+    material_quality_score?: number | null;
+    legal_purity_score?: number | null;
     comments: Comment[];
     created_at: string;
     updated_at: string;
 }
 
 export interface CreateValuationRequest {
-    address: string;
-    property_type: string;
-    room_count: number;
-    room_details: string;
+    city: string;
+    street: string;
+    house_number: string;
+    property_type: "APARTMENT" | "OFFICE" | "HOUSE";
+    apartment_number?: string;
+    office_number?: string;
+    floor?: number;
+    description?: string;
 }
 
 export interface UpdateValuationRequest {
@@ -76,8 +91,19 @@ export interface UpdateValuationRequest {
     assessment_date?: string;
     status?: "DRAFT" | "CREATED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "APPRAISER_ASSIGNED" | "APPROVED_BY_EMPLOYEE" | "REPORT_SUBMITTED" | "REPORT_APPROVED_BY_EMPLOYEE" | "RETURNED_TO_CLIENT" | "RETURNED_TO_APPRAISER";
     comment_text?: string;
-    address?: string;
-    property_type?: string;
-    room_count?: number;
-    room_details?: string;
+    city?: string;
+    street?: string;
+    house_number?: string;
+    property_type?: "APARTMENT" | "OFFICE" | "HOUSE" | "WAREHOUSE" | "COMMERCIAL";
+    apartment_number?: string | null;
+    office_number?: string | null;
+    floor?: number | null;
+    description?: string | null;
+    report_url?: string;
+    final_price?: number;
+    condition_score?: number;
+    location_score?: number;
+    liquidity_score?: number;
+    material_quality_score?: number;
+    legal_purity_score?: number;
 }

@@ -22,30 +22,158 @@ import type {
 } from "@/lib/api/types";
 
 const updateValuationSchema = z.object({
-    address: z.string().min(1, "Адрес обязателен для заполнения"),
-    property_type: z.string().min(1, "Тип недвижимости обязателен"),
-    room_count: z
+    city: z.string().min(1, "Город обязателен для заполнения"),
+    street: z.string().min(1, "Улица обязательна для заполнения"),
+    house_number: z.string().min(1, "Номер дома обязателен для заполнения"),
+    property_type: z.enum(["APARTMENT", "OFFICE", "HOUSE", "WAREHOUSE", "COMMERCIAL"]),
+    apartment_number: z.string().optional(),
+    office_number: z.string().optional(),
+    floor: z
         .number()
-        .min(1, "Количество комнат должно быть больше 0")
-        .int("Количество комнат должно быть целым числом"),
-    room_details: z.string().min(1, "Детали комнат обязательны"),
+        .int("Этаж должен быть целым числом")
+        .optional(),
+    description: z.string().optional(),
     comment_text: z.string().optional(),
+}).superRefine((data, ctx) => {
+    if (data.property_type === "APARTMENT" && !data.apartment_number) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Номер квартиры обязателен для квартир",
+            path: ["apartment_number"],
+        });
+    }
+    if (data.property_type === "APARTMENT" && !data.floor) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Этаж обязателен для квартир",
+            path: ["floor"],
+        });
+    }
+    if (data.property_type === "OFFICE" && !data.office_number) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Номер офиса обязателен для офисов",
+            path: ["office_number"],
+        });
+    }
 });
 
 const statusActionSchema = z.object({
     status: z.string().optional(),
     appraiser_id: z.number().optional(),
     assessment_date: z.string().optional(),
-    comment_text: z.string().min(1, "Комментарий обязателен"),
-}).refine((data) => {
-    // Если назначается оценщик, то assessment_date обязателен
-    if (data.appraiser_id !== undefined && data.appraiser_id !== null) {
-        return !!data.assessment_date;
+    comment_text: z.string().optional(),
+    report_url: z.string().optional(),
+    final_price: z.number().positive("Финальная стоимость должна быть больше 0").optional(),
+    condition_score: z
+        .number()
+        .min(1, "Оценка состояния должна быть от 1 до 10")
+        .max(10, "Оценка состояния должна быть от 1 до 10")
+        .int("Оценка состояния должна быть целым числом")
+        .optional(),
+    location_score: z
+        .number()
+        .min(1, "Оценка локации должна быть от 1 до 10")
+        .max(10, "Оценка локации должна быть от 1 до 10")
+        .int("Оценка локации должна быть целым числом")
+        .optional(),
+    liquidity_score: z
+        .number()
+        .min(1, "Ликвидность должна быть от 1 до 10")
+        .max(10, "Ликвидность должна быть от 1 до 10")
+        .int("Ликвидность должна быть целым числом")
+        .optional(),
+    material_quality_score: z
+        .number()
+        .min(1, "Качество материалов должно быть от 1 до 10")
+        .max(10, "Качество материалов должно быть от 1 до 10")
+        .int("Качество материалов должно быть целым числом")
+        .optional(),
+    legal_purity_score: z
+        .number()
+        .min(1, "Юр. чистота должна быть от 1 до 10")
+        .max(10, "Юр. чистота должна быть от 1 до 10")
+        .int("Юр. чистота должна быть целым числом")
+        .optional(),
+}).superRefine((data, ctx) => {
+    // При назначении оценщика оба поля обязательны
+    // Проверяем, если указан appraiser_id или assessment_date, то оба должны быть заполнены
+    const hasAppraiserId = data.appraiser_id !== undefined && data.appraiser_id !== null;
+    const hasAssessmentDate = data.assessment_date !== undefined && data.assessment_date !== null && data.assessment_date.trim() !== "";
+    
+    if (hasAppraiserId || hasAssessmentDate) {
+        if (!hasAppraiserId) {
+            ctx.addIssue({
+                code: "custom",
+                message: "Выберите оценщика",
+                path: ["appraiser_id"],
+            });
+        }
+        if (!hasAssessmentDate) {
+            ctx.addIssue({
+                code: "custom",
+                message: "Дата оценки обязательна при назначении оценщика",
+                path: ["assessment_date"],
+            });
+        }
     }
-    return true;
-}, {
-    message: "Дата оценки обязательна при назначении оценщика",
-    path: ["assessment_date"],
+
+    // Комментарий обязателен для некоторых действий
+    const actionsRequiringComment = [
+        "RETURNED_TO_CLIENT",
+        "RETURNED_TO_APPRAISER",
+        "APPROVED_BY_EMPLOYEE",
+        "REPORT_APPROVED_BY_EMPLOYEE",
+    ];
+    if (data.status && actionsRequiringComment.includes(data.status) && !data.comment_text?.trim()) {
+        ctx.addIssue({
+            code: "custom",
+            message: "Комментарий обязателен для этого действия",
+            path: ["comment_text"],
+        });
+    }
+
+    if (data.status === "REPORT_SUBMITTED") {
+        // Проверка report_url - обязателен и должен быть валидным URL
+        if (!data.report_url || data.report_url.trim() === "") {
+            ctx.addIssue({
+                code: "custom",
+                message: "Ссылка на отчет обязательна",
+                path: ["report_url"],
+            });
+        } else {
+            // Проверка формата URL
+            try {
+                new URL(data.report_url);
+            } catch {
+                ctx.addIssue({
+                    code: "custom",
+                    message: "Ссылка на отчет должна быть валидной",
+                    path: ["report_url"],
+                });
+            }
+        }
+
+        const requiredFields: Array<{ key: keyof typeof data; message: string }> = [
+            { key: "final_price", message: "Финальная стоимость обязательна" },
+            { key: "condition_score", message: "Заполните оценку состояния" },
+            { key: "location_score", message: "Заполните оценку локации" },
+            { key: "liquidity_score", message: "Заполните оценку ликвидности" },
+            { key: "material_quality_score", message: "Заполните оценку качества материалов" },
+            { key: "legal_purity_score", message: "Заполните оценку юридической чистоты" },
+        ];
+
+        requiredFields.forEach(({ key, message }) => {
+            const value = data[key];
+            if (value === undefined || value === null || value === "") {
+                ctx.addIssue({
+                    code: "custom",
+                    message,
+                    path: [key],
+                });
+            }
+        });
+    }
 });
 
 const rejectSchema = z.object({
@@ -74,13 +202,19 @@ export function ValuationDetail() {
     const form = useForm<UpdateValuationForm>({
         resolver: zodResolver(updateValuationSchema),
         defaultValues: {
-            address: "",
-            property_type: "",
-            room_count: 1,
-            room_details: "",
+            city: "",
+            street: "",
+            house_number: "",
+            property_type: "APARTMENT",
+            apartment_number: "",
+            office_number: "",
+            floor: undefined,
+            description: "",
             comment_text: "",
         },
     });
+
+    const propertyType = form.watch("property_type");
 
     const statusForm = useForm<StatusActionForm>({
         resolver: zodResolver(statusActionSchema),
@@ -89,6 +223,13 @@ export function ValuationDetail() {
             appraiser_id: undefined,
             assessment_date: "",
             comment_text: "",
+            report_url: "",
+            final_price: undefined,
+            condition_score: undefined,
+            location_score: undefined,
+            liquidity_score: undefined,
+            material_quality_score: undefined,
+            legal_purity_score: undefined,
         },
     });
 
@@ -116,10 +257,14 @@ export function ValuationDetail() {
                 );
                 setValuation(data);
                 form.reset({
-                    address: data.address,
-                    property_type: data.property_type,
-                    room_count: data.room_count,
-                    room_details: data.room_details,
+                    city: data.city,
+                    street: data.street,
+                    house_number: data.house_number,
+                    property_type: data.property_type as "APARTMENT" | "OFFICE" | "HOUSE" | "WAREHOUSE" | "COMMERCIAL",
+                    apartment_number: data.apartment_number || "",
+                    office_number: data.office_number || "",
+                    floor: data.floor || undefined,
+                    description: data.description || "",
                     comment_text: "",
                 });
 
@@ -184,10 +329,14 @@ export function ValuationDetail() {
         try {
             setIsSubmitting(true);
             const updateData: UpdateValuationRequest = {
-                address: data.address,
+                city: data.city,
+                street: data.street,
+                house_number: data.house_number,
                 property_type: data.property_type,
-                room_count: data.room_count,
-                room_details: data.room_details,
+                apartment_number: data.apartment_number || null,
+                office_number: data.office_number || null,
+                floor: data.floor || null,
+                description: data.description || null,
                 // Сохраняем текущий статус при редактировании
                 status: valuation.status,
                 appraiser_id: valuation.appraiser_id || 0,
@@ -214,9 +363,12 @@ export function ValuationDetail() {
 
         try {
             setIsSubmitting(true);
-            const updateData: UpdateValuationRequest = {
-                comment_text: data.comment_text,
-            };
+            const updateData: UpdateValuationRequest = {};
+
+            const trimmedComment = data.comment_text?.trim();
+            if (trimmedComment) {
+                updateData.comment_text = trimmedComment;
+            }
 
             let successMessage = "Действие выполнено успешно!";
 
@@ -246,20 +398,67 @@ export function ValuationDetail() {
                 }
             }
 
-            if (data.appraiser_id !== undefined) {
+            if (data.appraiser_id !== undefined && data.appraiser_id !== null) {
                 updateData.appraiser_id = data.appraiser_id;
                 successMessage = "Оценщик успешно назначен!";
             }
 
-            if (data.assessment_date) {
+            if (data.assessment_date && data.assessment_date.trim() !== "") {
                 // Преобразуем локальную дату в ISO формат
                 const date = new Date(data.assessment_date);
                 updateData.assessment_date = date.toISOString();
             }
 
+            if (data.report_url) {
+                updateData.report_url = data.report_url;
+            }
+
+            if (data.final_price !== undefined) {
+                updateData.final_price = data.final_price;
+            }
+
+            if (data.condition_score !== undefined) {
+                updateData.condition_score = data.condition_score;
+            }
+
+            if (data.location_score !== undefined) {
+                updateData.location_score = data.location_score;
+            }
+
+            if (data.liquidity_score !== undefined) {
+                updateData.liquidity_score = data.liquidity_score;
+            }
+
+            if (data.material_quality_score !== undefined) {
+                updateData.material_quality_score = data.material_quality_score;
+            }
+
+            if (data.legal_purity_score !== undefined) {
+                updateData.legal_purity_score = data.legal_purity_score;
+            }
+
+            // Проверяем, что есть данные для отправки (после всех добавлений)
+            if (Object.keys(updateData).length === 0) {
+                toast.error("Нет данных для обновления");
+                setIsSubmitting(false);
+                return;
+            }
+
             await valuationService.updateValuation(parseInt(id), updateData);
             toast.success(successMessage);
-            statusForm.reset();
+            statusForm.reset({
+                status: "",
+                appraiser_id: undefined,
+                assessment_date: "",
+                comment_text: "",
+                report_url: "",
+                final_price: undefined,
+                condition_score: undefined,
+                location_score: undefined,
+                liquidity_score: undefined,
+                material_quality_score: undefined,
+                legal_purity_score: undefined,
+            });
             rejectForm.reset();
             await refreshValuation();
         } catch (err) {
@@ -298,6 +497,9 @@ export function ValuationDetail() {
             minute: "2-digit",
         });
     };
+
+    const formatPrice = (price: number) =>
+        new Intl.NumberFormat("ru-RU").format(price);
 
     const getStatusLabel = (status: string) => {
         const statusMap: Record<string, string> = {
@@ -341,6 +543,20 @@ export function ValuationDetail() {
     const isAppraiser = currentUser.role === "APPRAISER";
     const isClient = currentUser.role === "CLIENT";
 
+    const hasScores = Boolean(
+        (valuation.condition_score !== null && valuation.condition_score !== undefined) ||
+        (valuation.location_score !== null && valuation.location_score !== undefined) ||
+        (valuation.liquidity_score !== null && valuation.liquidity_score !== undefined) ||
+        (valuation.material_quality_score !== null && valuation.material_quality_score !== undefined) ||
+        (valuation.legal_purity_score !== null && valuation.legal_purity_score !== undefined),
+    );
+
+    const hasReportMetrics = Boolean(
+        valuation.report_url ||
+        (valuation.final_price !== null && valuation.final_price !== undefined) ||
+        hasScores,
+    );
+
     // Клиент может редактировать заявку в статусе DRAFT или RETURNED_TO_CLIENT
     const canEdit = isClient && (valuation.status === "DRAFT" || valuation.status === "RETURNED_TO_CLIENT");
     
@@ -355,7 +571,7 @@ export function ValuationDetail() {
     const canRejectByAppraiser = isAppraiser && valuation.status === "APPRAISER_ASSIGNED";
     const canReturnToAppraiser = isEmployee && valuation.status === "REPORT_SUBMITTED";
     const canApproveReport = isEmployee && valuation.status === "REPORT_SUBMITTED";
-    // Клиент просто получает отчет, не может принимать работу
+    // Клиент не может принимать отчет - он просто просматривает его
     // const canComplete = isClient && valuation.status === "REPORT_APPROVED_BY_EMPLOYEE";
 
     return (
@@ -398,19 +614,67 @@ export function ValuationDetail() {
                             onSubmit={form.handleSubmit(handleUpdateValuation)}
                             className="space-y-3"
                         >
-                            <FieldGroup>
+                            <FieldGroup className="grid grid-cols-2 gap-4">
                                 <Controller
-                                    name="address"
+                                    name="city"
                                     control={form.control}
                                     render={({ field, fieldState }) => (
                                         <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="address">
-                                                Адрес
+                                            <FieldLabel htmlFor="city">
+                                                Город
                                             </FieldLabel>
                                             <Input
                                                 {...field}
-                                                id="address"
-                                                placeholder="Введите адрес"
+                                                id="city"
+                                                placeholder="Москва"
+                                                aria-invalid={fieldState.invalid}
+                                                className="h-9"
+                                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+
+                                <Controller
+                                    name="street"
+                                    control={form.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="street">
+                                                Улица
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="street"
+                                                placeholder="Улица Пушкина"
+                                                aria-invalid={fieldState.invalid}
+                                                className="h-9"
+                                            />
+                                            {fieldState.invalid && (
+                                                <FieldError
+                                                    errors={[fieldState.error]}
+                                                />
+                                            )}
+                                        </Field>
+                                    )}
+                                />
+
+                                <Controller
+                                    name="house_number"
+                                    control={form.control}
+                                    render={({ field, fieldState }) => (
+                                        <Field data-invalid={fieldState.invalid}>
+                                            <FieldLabel htmlFor="house_number">
+                                                Номер дома
+                                            </FieldLabel>
+                                            <Input
+                                                {...field}
+                                                id="house_number"
+                                                placeholder="10"
                                                 aria-invalid={fieldState.invalid}
                                                 className="h-9"
                                             />
@@ -431,13 +695,17 @@ export function ValuationDetail() {
                                             <FieldLabel htmlFor="property_type">
                                                 Тип недвижимости
                                             </FieldLabel>
-                                            <Input
+                                            <select
                                                 {...field}
                                                 id="property_type"
-                                                placeholder="Например: Квартира, Дом"
-                                                aria-invalid={fieldState.invalid}
-                                                className="h-9"
-                                            />
+                                                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                            >
+                                                <option value="APARTMENT">Квартира</option>
+                                                <option value="OFFICE">Офис</option>
+                                                <option value="HOUSE">Дом</option>
+                                                <option value="WAREHOUSE">Склад</option>
+                                                <option value="COMMERCIAL">Торговое помещение</option>
+                                            </select>
                                             {fieldState.invalid && (
                                                 <FieldError
                                                     errors={[fieldState.error]}
@@ -447,52 +715,140 @@ export function ValuationDetail() {
                                     )}
                                 />
 
-                                <Controller
-                                    name="room_count"
-                                    control={form.control}
-                                    render={({ field, fieldState }) => (
-                                        <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="room_count">
-                                                Количество комнат
-                                            </FieldLabel>
-                                            <Input
-                                                {...field}
-                                                id="room_count"
-                                                type="number"
-                                                min="1"
-                                                onChange={(e) =>
-                                                    field.onChange(
-                                                        parseInt(
-                                                            e.target.value,
-                                                        ) || 0,
-                                                    )
-                                                }
-                                                value={field.value}
-                                                placeholder="Введите количество комнат"
-                                                aria-invalid={fieldState.invalid}
-                                                className="h-9"
-                                            />
-                                            {fieldState.invalid && (
-                                                <FieldError
-                                                    errors={[fieldState.error]}
+                                {propertyType === "APARTMENT" && (
+                                    <Controller
+                                        name="apartment_number"
+                                        control={form.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="apartment_number">
+                                                    Номер квартиры
+                                                </FieldLabel>
+                                                <Input
+                                                    {...field}
+                                                    id="apartment_number"
+                                                    placeholder="45"
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="h-9"
                                                 />
-                                            )}
-                                        </Field>
-                                    )}
-                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                )}
+
+                                {propertyType === "OFFICE" && (
+                                    <Controller
+                                        name="office_number"
+                                        control={form.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="office_number">
+                                                    Номер офиса
+                                                </FieldLabel>
+                                                <Input
+                                                    {...field}
+                                                    id="office_number"
+                                                    placeholder="301"
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="h-9"
+                                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                )}
+
+                                {propertyType === "APARTMENT" && (
+                                    <Controller
+                                        name="floor"
+                                        control={form.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="floor">
+                                                    Этаж
+                                                </FieldLabel>
+                                                <Input
+                                                    {...field}
+                                                    id="floor"
+                                                    type="number"
+                                                    value={field.value ?? ""}
+                                                    onChange={(e) =>
+                                                        field.onChange(
+                                                            e.target.value === ""
+                                                                ? undefined
+                                                                : parseInt(e.target.value, 10),
+                                                        )
+                                                    }
+                                                    placeholder="5"
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="h-9"
+                                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                )}
+
+                                {propertyType === "OFFICE" && (
+                                    <Controller
+                                        name="floor"
+                                        control={form.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="floor">
+                                                    Этаж (необязательно)
+                                                </FieldLabel>
+                                                <Input
+                                                    {...field}
+                                                    id="floor"
+                                                    type="number"
+                                                    value={field.value ?? ""}
+                                                    onChange={(e) =>
+                                                        field.onChange(
+                                                            e.target.value === ""
+                                                                ? undefined
+                                                                : parseInt(e.target.value, 10),
+                                                        )
+                                                    }
+                                                    placeholder="5"
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="h-9"
+                                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                )}
 
                                 <Controller
-                                    name="room_details"
+                                    name="description"
                                     control={form.control}
                                     render={({ field, fieldState }) => (
-                                        <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor="room_details">
-                                                Детали комнат
+                                        <Field data-invalid={fieldState.invalid} className="col-span-2">
+                                            <FieldLabel htmlFor="description">
+                                                Описание (необязательно)
                                             </FieldLabel>
                                             <Input
                                                 {...field}
-                                                id="room_details"
-                                                placeholder="Опишите детали комнат"
+                                                id="description"
+                                                placeholder="Дополнительное описание объекта"
                                                 aria-invalid={fieldState.invalid}
                                                 className="h-9"
                                             />
@@ -511,7 +867,7 @@ export function ValuationDetail() {
                                         name="comment_text"
                                         control={form.control}
                                         render={({ field, fieldState }) => (
-                                            <Field data-invalid={fieldState.invalid}>
+                                            <Field data-invalid={fieldState.invalid} className="col-span-2">
                                                 <FieldLabel htmlFor="comment_text">
                                                     Комментарий (необязательно)
                                                 </FieldLabel>
@@ -579,7 +935,10 @@ export function ValuationDetail() {
                                     Адрес
                                 </label>
                                 <p className="mt-1 text-sm">
-                                    {valuation.address}
+                                    {valuation.city}, {valuation.street}, д. {valuation.house_number}
+                                    {valuation.apartment_number && `, кв. ${valuation.apartment_number}`}
+                                    {valuation.office_number && `, оф. ${valuation.office_number}`}
+                                    {valuation.floor && `, ${valuation.floor} этаж`}
                                 </p>
                             </div>
                             <div>
@@ -587,25 +946,24 @@ export function ValuationDetail() {
                                     Тип недвижимости
                                 </label>
                                 <p className="mt-1 text-sm">
-                                    {valuation.property_type}
+                                    {valuation.property_type === "APARTMENT" && "Квартира"}
+                                    {valuation.property_type === "OFFICE" && "Офис"}
+                                    {valuation.property_type === "HOUSE" && "Дом"}
+                                    {valuation.property_type === "WAREHOUSE" && "Склад"}
+                                    {valuation.property_type === "COMMERCIAL" && "Торговое помещение"}
+                                    {!["APARTMENT", "OFFICE", "HOUSE", "WAREHOUSE", "COMMERCIAL"].includes(valuation.property_type) && valuation.property_type}
                                 </p>
                             </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground">
-                                    Количество комнат
-                                </label>
-                                <p className="mt-1 text-sm">
-                                    {valuation.room_count}
-                                </p>
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-muted-foreground">
-                                    Детали комнат
-                                </label>
-                                <p className="mt-1 text-sm">
-                                    {valuation.room_details}
-                                </p>
-                            </div>
+                            {valuation.description && (
+                                <div>
+                                    <label className="text-xs font-medium text-muted-foreground">
+                                        Описание
+                                    </label>
+                                    <p className="mt-1 text-sm">
+                                        {valuation.description}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -662,6 +1020,7 @@ export function ValuationDetail() {
                             </Button>
                         </form>
                     )}
+
 
                     {/* Действия для EMPLOYEE */}
                     {canReturnToClient && (
@@ -759,12 +1118,30 @@ export function ValuationDetail() {
 
                     {canAssignAppraiser && (
                         <form
-                            onSubmit={statusForm.handleSubmit((data) =>
-                                handleStatusAction({
+                            onSubmit={statusForm.handleSubmit(async (data) => {
+                                // Дополнительная проверка для назначения оценщика
+                                if (!data.appraiser_id) {
+                                    statusForm.setError("appraiser_id", {
+                                        type: "manual",
+                                        message: "Выберите оценщика",
+                                    });
+                                    return;
+                                }
+                                if (!data.assessment_date || data.assessment_date.trim() === "") {
+                                    statusForm.setError("assessment_date", {
+                                        type: "manual",
+                                        message: "Укажите дату оценки",
+                                    });
+                                    return;
+                                }
+                                await handleStatusAction({
                                     ...data,
                                     appraiser_id: data.appraiser_id,
-                                }),
-                            )}
+                                });
+                            }, (errors) => {
+                                // Обработка ошибок валидации
+                                console.error("Validation errors:", errors);
+                            })}
                             className="space-y-3 border rounded-lg p-4"
                         >
                             <h3 className="text-sm font-semibold mb-3">
@@ -845,7 +1222,7 @@ export function ValuationDetail() {
                                     render={({ field, fieldState }) => (
                                         <Field data-invalid={fieldState.invalid}>
                                             <FieldLabel htmlFor="assign_comment">
-                                                Комментарий
+                                                Комментарий (необязательно)
                                             </FieldLabel>
                                             <textarea
                                                 {...field}
@@ -894,6 +1271,235 @@ export function ValuationDetail() {
                                         : "Сдать отчет"}
                                 </h3>
                                 <FieldGroup>
+                                    <Controller
+                                        name="report_url"
+                                        control={statusForm.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="report_url">
+                                                    Ссылка на отчет
+                                                </FieldLabel>
+                                                <Input
+                                                    {...field}
+                                                    id="report_url"
+                                                    value={field.value || ""}
+                                                    placeholder="https://disk.yandex.ru/i/example_report.pdf"
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="h-9"
+                                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                    <Controller
+                                        name="final_price"
+                                        control={statusForm.control}
+                                        render={({ field, fieldState }) => (
+                                            <Field data-invalid={fieldState.invalid}>
+                                                <FieldLabel htmlFor="final_price">
+                                                    Итоговая стоимость (руб.)
+                                                </FieldLabel>
+                                                <Input
+                                                    {...field}
+                                                    id="final_price"
+                                                    type="number"
+                                                    min={0}
+                                                    step="0.01"
+                                                    value={field.value ?? ""}
+                                                    onChange={(e) =>
+                                                        field.onChange(
+                                                            e.target.value === ""
+                                                                ? undefined
+                                                                : parseFloat(e.target.value),
+                                                        )
+                                                    }
+                                                    aria-invalid={fieldState.invalid}
+                                                    className="h-9"
+                                                />
+                                                {fieldState.invalid && (
+                                                    <FieldError
+                                                        errors={[fieldState.error]}
+                                                    />
+                                                )}
+                                            </Field>
+                                        )}
+                                    />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <Controller
+                                            name="condition_score"
+                                            control={statusForm.control}
+                                            render={({ field, fieldState }) => (
+                                                <Field data-invalid={fieldState.invalid}>
+                                                    <FieldLabel htmlFor="condition_score">
+                                                        Состояние (1-10)
+                                                    </FieldLabel>
+                                                    <Input
+                                                        {...field}
+                                                        id="condition_score"
+                                                        type="number"
+                                                        min={1}
+                                                        max={10}
+                                                        step={1}
+                                                        value={field.value ?? ""}
+                                                        onChange={(e) =>
+                                                            field.onChange(
+                                                                e.target.value === ""
+                                                                    ? undefined
+                                                                    : parseInt(e.target.value, 10),
+                                                            )
+                                                        }
+                                                        aria-invalid={fieldState.invalid}
+                                                        className="h-9"
+                                                    />
+                                                    {fieldState.invalid && (
+                                                        <FieldError
+                                                            errors={[fieldState.error]}
+                                                        />
+                                                    )}
+                                                </Field>
+                                            )}
+                                        />
+                                        <Controller
+                                            name="location_score"
+                                            control={statusForm.control}
+                                            render={({ field, fieldState }) => (
+                                                <Field data-invalid={fieldState.invalid}>
+                                                    <FieldLabel htmlFor="location_score">
+                                                        Локация (1-10)
+                                                    </FieldLabel>
+                                                    <Input
+                                                        {...field}
+                                                        id="location_score"
+                                                        type="number"
+                                                        min={1}
+                                                        max={10}
+                                                        step={1}
+                                                        value={field.value ?? ""}
+                                                        onChange={(e) =>
+                                                            field.onChange(
+                                                                e.target.value === ""
+                                                                    ? undefined
+                                                                    : parseInt(e.target.value, 10),
+                                                            )
+                                                        }
+                                                        aria-invalid={fieldState.invalid}
+                                                        className="h-9"
+                                                    />
+                                                    {fieldState.invalid && (
+                                                        <FieldError
+                                                            errors={[fieldState.error]}
+                                                        />
+                                                    )}
+                                                </Field>
+                                            )}
+                                        />
+                                        <Controller
+                                            name="liquidity_score"
+                                            control={statusForm.control}
+                                            render={({ field, fieldState }) => (
+                                                <Field data-invalid={fieldState.invalid}>
+                                                    <FieldLabel htmlFor="liquidity_score">
+                                                        Ликвидность (1-10)
+                                                    </FieldLabel>
+                                                    <Input
+                                                        {...field}
+                                                        id="liquidity_score"
+                                                        type="number"
+                                                        min={1}
+                                                        max={10}
+                                                        step={1}
+                                                        value={field.value ?? ""}
+                                                        onChange={(e) =>
+                                                            field.onChange(
+                                                                e.target.value === ""
+                                                                    ? undefined
+                                                                    : parseInt(e.target.value, 10),
+                                                            )
+                                                        }
+                                                        aria-invalid={fieldState.invalid}
+                                                        className="h-9"
+                                                    />
+                                                    {fieldState.invalid && (
+                                                        <FieldError
+                                                            errors={[fieldState.error]}
+                                                        />
+                                                    )}
+                                                </Field>
+                                            )}
+                                        />
+                                        <Controller
+                                            name="material_quality_score"
+                                            control={statusForm.control}
+                                            render={({ field, fieldState }) => (
+                                                <Field data-invalid={fieldState.invalid}>
+                                                    <FieldLabel htmlFor="material_quality_score">
+                                                        Качество материалов (1-10)
+                                                    </FieldLabel>
+                                                    <Input
+                                                        {...field}
+                                                        id="material_quality_score"
+                                                        type="number"
+                                                        min={1}
+                                                        max={10}
+                                                        step={1}
+                                                        value={field.value ?? ""}
+                                                        onChange={(e) =>
+                                                            field.onChange(
+                                                                e.target.value === ""
+                                                                    ? undefined
+                                                                    : parseInt(e.target.value, 10),
+                                                            )
+                                                        }
+                                                        aria-invalid={fieldState.invalid}
+                                                        className="h-9"
+                                                    />
+                                                    {fieldState.invalid && (
+                                                        <FieldError
+                                                            errors={[fieldState.error]}
+                                                        />
+                                                    )}
+                                                </Field>
+                                            )}
+                                        />
+                                        <Controller
+                                            name="legal_purity_score"
+                                            control={statusForm.control}
+                                            render={({ field, fieldState }) => (
+                                                <Field data-invalid={fieldState.invalid}>
+                                                    <FieldLabel htmlFor="legal_purity_score">
+                                                        Юридическая чистота (1-10)
+                                                    </FieldLabel>
+                                                    <Input
+                                                        {...field}
+                                                        id="legal_purity_score"
+                                                        type="number"
+                                                        min={1}
+                                                        max={10}
+                                                        step={1}
+                                                        value={field.value ?? ""}
+                                                        onChange={(e) =>
+                                                            field.onChange(
+                                                                e.target.value === ""
+                                                                    ? undefined
+                                                                    : parseInt(e.target.value, 10),
+                                                            )
+                                                        }
+                                                        aria-invalid={fieldState.invalid}
+                                                        className="h-9"
+                                                    />
+                                                    {fieldState.invalid && (
+                                                        <FieldError
+                                                            errors={[fieldState.error]}
+                                                        />
+                                                    )}
+                                                </Field>
+                                            )}
+                                        />
+                                    </div>
                                     <Controller
                                         name="comment_text"
                                         control={statusForm.control}
@@ -1081,6 +1687,71 @@ export function ValuationDetail() {
                                     : "Утвердить отчет"}
                             </Button>
                         </form>
+                    )}
+
+                    {hasReportMetrics && (
+                        <>
+                            <Separator />
+                            <div>
+                                <h3 className="text-sm font-semibold mb-3">
+                                    Результаты оценки
+                                </h3>
+                                <div className="space-y-2">
+                                    {valuation.report_url && (
+                                        <a
+                                            className="text-sm text-blue-600 hover:underline"
+                                            href={valuation.report_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Ссылка на отчет
+                                        </a>
+                                    )}
+                                    {valuation.final_price !== null &&
+                                        valuation.final_price !== undefined && (
+                                            <p className="text-sm">
+                                                Итоговая стоимость:{" "}
+                                                {formatPrice(valuation.final_price)} руб.
+                                            </p>
+                                        )}
+                                    {hasScores && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            {valuation.condition_score !== null &&
+                                                valuation.condition_score !== undefined && (
+                                                    <p className="text-sm">
+                                                        Состояние: {valuation.condition_score}/10
+                                                    </p>
+                                                )}
+                                            {valuation.location_score !== null &&
+                                                valuation.location_score !== undefined && (
+                                                    <p className="text-sm">
+                                                        Локация: {valuation.location_score}/10
+                                                    </p>
+                                                )}
+                                            {valuation.liquidity_score !== null &&
+                                                valuation.liquidity_score !== undefined && (
+                                                    <p className="text-sm">
+                                                        Ликвидность: {valuation.liquidity_score}/10
+                                                    </p>
+                                                )}
+                                            {valuation.material_quality_score !== null &&
+                                                valuation.material_quality_score !== undefined && (
+                                                    <p className="text-sm">
+                                                        Качество материалов:{" "}
+                                                        {valuation.material_quality_score}/10
+                                                    </p>
+                                                )}
+                                            {valuation.legal_purity_score !== null &&
+                                                valuation.legal_purity_score !== undefined && (
+                                                    <p className="text-sm">
+                                                        Юридическая чистота: {valuation.legal_purity_score}/10
+                                                    </p>
+                                                )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </>
                     )}
 
                     <Separator />
