@@ -123,7 +123,6 @@ Backend-сервис для агентства оценки недвижимос
       "property_type": "APARTMENT",
       "apartment_number": "45", 
       "floor": 5,
-      "room_count": 2,
       "description": "Черновая отделка, окна во двор"
     }
     ```
@@ -137,7 +136,6 @@ Backend-сервис для агентства оценки недвижимос
       "property_type": "OFFICE",
       "office_number": "301",
       "floor": 3,
-      "room_count": 1,
       "description": "Офис класса А, требуется пропуск"
     }
     ```
