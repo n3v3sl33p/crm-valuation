@@ -219,6 +219,9 @@ async def update_valuation_request(
         elif request_in.comment_text and not request_in.status and not request_in.appraiser_id:
              add_comment(request_in.comment_text)
 
+        else:
+             raise HTTPException(status_code=400, detail="Invalid status transition or action for Employee")
+
 
     # --- Appraiser Logic ---
     elif current_user.role == UserRole.APPRAISER:
@@ -263,6 +266,9 @@ async def update_valuation_request(
         elif request_in.comment_text and not request_in.status:
              add_comment(request_in.comment_text)
 
+        else:
+             raise HTTPException(status_code=400, detail="Invalid status transition or action for Appraiser")
+
     # --- Client Logic ---
     elif current_user.role == UserRole.CLIENT:
         if valuation_request.client_id != current_user.id:
@@ -302,8 +308,11 @@ async def update_valuation_request(
         elif request_in.comment_text and not request_in.status:
              add_comment(request_in.comment_text)
 
+        else:
+             raise HTTPException(status_code=400, detail="Invalid status transition or action for Client")
+
     else:
-        pass
+        raise HTTPException(status_code=403, detail="Role not authorized for this action")
 
     # Save changes
     db.add(valuation_request)
