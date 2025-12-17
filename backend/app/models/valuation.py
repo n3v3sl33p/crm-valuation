@@ -1,36 +1,69 @@
 import enum
-from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Text, JSON, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from datetime import datetime, timezone, timedelta
+
+# Helper for MSK time
+def get_msk_now():
+    return datetime.now(timezone(timedelta(hours=3)))
 
 class RequestStatus(str, enum.Enum):
-    DRAFT = "DRAFT" # Client creates draft
-    CREATED = "CREATED" # Client submits to Employee
-    RETURNED_TO_CLIENT = "RETURNED_TO_CLIENT" # Employee returns to Client for corrections
-    APPROVED_BY_EMPLOYEE = "APPROVED_BY_EMPLOYEE" # Approved by Employee
-    APPRAISER_ASSIGNED = "APPRAISER_ASSIGNED" # Appraiser Assigned by Employee
-    REPORT_SUBMITTED = "REPORT_SUBMITTED" # Report done by Appraiser
-    RETURNED_TO_APPRAISER = "RETURNED_TO_APPRAISER" # Employee rejects report back to Appraiser
-    REPORT_APPROVED_BY_EMPLOYEE = "REPORT_APPROVED_BY_EMPLOYEE" # Report approved by Employee
-    COMPLETED = "COMPLETED" # Accepted by Client
-    RETURNED_TO_EMPLOYEE = "RETURNED_TO_EMPLOYEE" # Rejected by Client (Report rejected)
+    DRAFT = "DRAFT"
+    CREATED = "CREATED"
+    RETURNED_TO_CLIENT = "RETURNED_TO_CLIENT"
+    APPROVED_BY_EMPLOYEE = "APPROVED_BY_EMPLOYEE"
+    APPRAISER_ASSIGNED = "APPRAISER_ASSIGNED"
+    REPORT_SUBMITTED = "REPORT_SUBMITTED"
+    RETURNED_TO_APPRAISER = "RETURNED_TO_APPRAISER"
+    REPORT_APPROVED_BY_EMPLOYEE = "REPORT_APPROVED_BY_EMPLOYEE"
+    COMPLETED = "COMPLETED"
+    RETURNED_TO_EMPLOYEE = "RETURNED_TO_EMPLOYEE"
+
+class PropertyType(str, enum.Enum):
+    APARTMENT = "APARTMENT"      # Квартира
+    HOUSE = "HOUSE"              # Жилой дом
+    OFFICE = "OFFICE"            # Офисное помещение
+    WAREHOUSE = "WAREHOUSE"      # Склад
+    COMMERCIAL = "COMMERCIAL"    # Торговое помещение
 
 class ValuationRequest(Base):
     __tablename__ = "valuation_requests"
 
     id = Column(Integer, primary_key=True, index=True)
     
-    # Property Details
-    address = Column(String, nullable=False)
-    property_type = Column(String, nullable=False)
-    room_count = Column(Integer, nullable=False)
-    room_details = Column(Text, nullable=False) # JSON or description
+    # --- Location Details ---
+    city = Column(String, nullable=False)
+    street = Column(String, nullable=False)
+    house_number = Column(String, nullable=False)
+    
+    # --- Property Specifics ---
+    property_type = Column(Enum(PropertyType), nullable=False)
+    
+    # Optional fields depending on type
+    apartment_number = Column(String, nullable=True) # For APARTMENT
+    floor = Column(Integer, nullable=True)           # For APARTMENT, OFFICE
+    office_number = Column(String, nullable=True)    # For OFFICE
+    
+    # General details (room count, area, etc.)
+    room_count = Column(Integer, nullable=False) # Or generic "space count"
+    room_details = Column(Text, nullable=False)  # Description
     
     status = Column(Enum(RequestStatus), default=RequestStatus.DRAFT, nullable=False)
     
+    # --- Appraiser Report Data ---
+    report_url = Column(String, nullable=True) # Link to file
+    final_price = Column(Float, nullable=True) # Estimated value
+    
+    # 5 Basic Criteria (1-10 or similar)
+    condition_score = Column(Integer, nullable=True)      # Состояние (ремонт)
+    location_score = Column(Integer, nullable=True)       # Расположение/Инфраструктура
+    liquidity_score = Column(Integer, nullable=True)      # Ликвидность объекта
+    material_quality_score = Column(Integer, nullable=True) # Качество материалов/постройки
+    legal_purity_score = Column(Integer, nullable=True)   # Юридическая чистота (предварительная)
+
     # Workflow Data
-    # Stores list of {role: str, text: str, created_at: str, action: str}
     comments = Column(JSON, default=list, nullable=False) 
     
     assessment_date = Column(DateTime(timezone=True), nullable=True)
@@ -39,8 +72,9 @@ class ValuationRequest(Base):
     client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     appraiser_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # Timestamps (Stored as MSK time for simplicity based on user request)
+    created_at = Column(DateTime(timezone=True), default=get_msk_now)
+    updated_at = Column(DateTime(timezone=True), default=get_msk_now, onupdate=get_msk_now)
     
     # Relationships
     client = relationship("app.models.user.User", back_populates="client_requests", foreign_keys=[client_id])

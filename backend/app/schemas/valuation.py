@@ -1,20 +1,30 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
-from app.models.valuation import RequestStatus
+from pydantic import BaseModel, Field, field_validator
+from app.models.valuation import RequestStatus, PropertyType
 from app.models.user import UserRole
 
 class CommentItem(BaseModel):
     role: UserRole
     text: str
     created_at: datetime
-    user_name: Optional[str] = None # To show who wrote it
+    user_name: Optional[str] = None
 
 class ValuationRequestBase(BaseModel):
-    address: str
-    property_type: str
-    room_count: int
-    room_details: str
+    # Location
+    city: str
+    street: str
+    house_number: str
+    
+    # Type and Details
+    property_type: PropertyType
+    room_count: int = Field(..., description="Number of rooms or spaces")
+    room_details: str = Field(..., description="General description")
+
+    # Optional specifics
+    apartment_number: Optional[str] = None
+    floor: Optional[int] = None
+    office_number: Optional[str] = None
 
 class ValuationRequestCreate(ValuationRequestBase):
     pass
@@ -22,14 +32,28 @@ class ValuationRequestCreate(ValuationRequestBase):
 class ValuationRequestUpdate(BaseModel):
     appraiser_id: Optional[int] = None
     status: Optional[RequestStatus] = None
-    comment_text: Optional[str] = None # New comment to add
-    assessment_date: Optional[datetime] = None # Date of assessment
+    comment_text: Optional[str] = None
+    assessment_date: Optional[datetime] = None
     
-    # Editable property fields
-    address: Optional[str] = None
-    property_type: Optional[str] = None
+    # Editable property fields (Client)
+    city: Optional[str] = None
+    street: Optional[str] = None
+    house_number: Optional[str] = None
+    property_type: Optional[PropertyType] = None
     room_count: Optional[int] = None
     room_details: Optional[str] = None
+    apartment_number: Optional[str] = None
+    floor: Optional[int] = None
+    office_number: Optional[str] = None
+    
+    # Appraiser Report Fields
+    report_url: Optional[str] = None
+    final_price: Optional[float] = None
+    condition_score: Optional[int] = Field(None, ge=1, le=10, description="Score 1-10")
+    location_score: Optional[int] = Field(None, ge=1, le=10, description="Score 1-10")
+    liquidity_score: Optional[int] = Field(None, ge=1, le=10, description="Score 1-10")
+    material_quality_score: Optional[int] = Field(None, ge=1, le=10, description="Score 1-10")
+    legal_purity_score: Optional[int] = Field(None, ge=1, le=10, description="Score 1-10")
 
 class ValuationRequestResponse(ValuationRequestBase):
     id: int
@@ -37,6 +61,15 @@ class ValuationRequestResponse(ValuationRequestBase):
     client_id: int
     appraiser_id: Optional[int] = None
     assessment_date: Optional[datetime] = None
+    
+    # Report Data
+    report_url: Optional[str] = None
+    final_price: Optional[float] = None
+    condition_score: Optional[int] = None
+    location_score: Optional[int] = None
+    liquidity_score: Optional[int] = None
+    material_quality_score: Optional[int] = None
+    legal_purity_score: Optional[int] = None
     
     comments: List[CommentItem] = []
     

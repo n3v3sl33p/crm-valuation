@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.api import deps
 from app.models.user import User, UserRole
-from app.models.valuation import ValuationRequest, RequestStatus
+from app.models.valuation import ValuationRequest, RequestStatus, PropertyType
 from app.schemas.valuation import ValuationRequestCreate, ValuationRequestResponse, ValuationRequestUpdate
 
 router = APIRouter()
@@ -23,6 +23,13 @@ async def create_valuation_request(
     if current_user.role != UserRole.CLIENT:
         raise HTTPException(status_code=403, detail="Only clients can create requests")
     
+    # Conditional Validation
+    if request_in.property_type == PropertyType.APARTMENT and not request_in.apartment_number:
+         raise HTTPException(status_code=400, detail="Apartment number is required for apartments")
+    
+    if request_in.property_type == PropertyType.OFFICE and not request_in.office_number:
+         raise HTTPException(status_code=400, detail="Office number is required for offices")
+
     valuation_request = ValuationRequest(
         **request_in.model_dump(),
         client_id=current_user.id,
@@ -124,13 +131,9 @@ async def update_valuation_request(
             raise HTTPException(status_code=400, detail=f"User with ID {appraiser_id} is not an APPRAISER")
         return appraiser
 
-    # --- Property Details Updates ---
-    has_property_updates = any([
-        request_in.address is not None,
-        request_in.property_type is not None,
-        request_in.room_count is not None,
-        request_in.room_details is not None
-    ])
+    # --- Property Details Updates (Client Editing) ---
+    property_fields = ["city", "street", "house_number", "property_type", "room_count", "room_details", "apartment_number", "floor", "office_number"]
+    has_property_updates = any(getattr(request_in, field) is not None for field in property_fields)
     
     if has_property_updates:
         can_edit = False
@@ -142,10 +145,10 @@ async def update_valuation_request(
                 can_edit = True
         
         if can_edit:
-            if request_in.address is not None: valuation_request.address = request_in.address
-            if request_in.property_type is not None: valuation_request.property_type = request_in.property_type
-            if request_in.room_count is not None: valuation_request.room_count = request_in.room_count
-            if request_in.room_details is not None: valuation_request.room_details = request_in.room_details
+            for field in property_fields:
+                val = getattr(request_in, field)
+                if val is not None:
+                    setattr(valuation_request, field, val)
         else:
              raise HTTPException(status_code=403, detail="Cannot edit property details at this stage or with your role")
 
@@ -238,7 +241,20 @@ async def update_valuation_request(
                   raise HTTPException(status_code=400, detail="Cannot submit report at this stage")
              
              if not request_in.comment_text:
-                  raise HTTPException(status_code=400, detail="Report content (comment) is required")
+                  raise HTTPException(status_code=400, detail="Report summary (comment) is required")
+
+             # Require Report Fields
+             if not request_in.report_url:
+                 raise HTTPException(status_code=400, detail="Report file URL is required")
+             
+             # Save report details
+             valuation_request.report_url = request_in.report_url
+             if request_in.final_price is not None: valuation_request.final_price = request_in.final_price
+             if request_in.condition_score is not None: valuation_request.condition_score = request_in.condition_score
+             if request_in.location_score is not None: valuation_request.location_score = request_in.location_score
+             if request_in.liquidity_score is not None: valuation_request.liquidity_score = request_in.liquidity_score
+             if request_in.material_quality_score is not None: valuation_request.material_quality_score = request_in.material_quality_score
+             if request_in.legal_purity_score is not None: valuation_request.legal_purity_score = request_in.legal_purity_score
                   
              valuation_request.status = RequestStatus.REPORT_SUBMITTED
              add_comment(request_in.comment_text) 
@@ -257,6 +273,12 @@ async def update_valuation_request(
             if valuation_request.status not in [RequestStatus.DRAFT, RequestStatus.RETURNED_TO_CLIENT]:
                 raise HTTPException(status_code=400, detail="Can only submit DRAFT or RETURNED_TO_CLIENT requests")
             
+            # Re-validate conditional fields before submission
+            if valuation_request.property_type == PropertyType.APARTMENT and not valuation_request.apartment_number:
+                 raise HTTPException(status_code=400, detail="Apartment number is required")
+            if valuation_request.property_type == PropertyType.OFFICE and not valuation_request.office_number:
+                 raise HTTPException(status_code=400, detail="Office number is required")
+
             valuation_request.status = RequestStatus.CREATED
             add_comment(request_in.comment_text or "Request submitted to employee.")
 
